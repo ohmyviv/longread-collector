@@ -1,0 +1,17 @@
+source_id,source_name,language,country_region,subject_groups,homepage_url,access_type,discovery_method,preferred_extractor,priority_tier,enabled,notes
+propublica,ProPublica,en,US,investigation|policy,https://www.propublica.org/,open,firecrawl_search|source_scan,jina,explore,TRUE,Nonprofit investigative newsroom
+undark,Undark,en,US,science|society,https://undark.org/,open,firecrawl_search|source_scan,jina,explore,TRUE,Science and society features
+knowable,Knowable Magazine,en,global,science|medicine,https://knowablemagazine.org/,open,firecrawl_search|source_scan,jina,explore,TRUE,Research-based explanatory journalism
+mittr,MIT Technology Review,en,US,technology|AI,https://www.technologyreview.com/,mixed,firecrawl_search|source_scan,jina,rotate,TRUE,
+ieee-spectrum,IEEE Spectrum,en,global,engineering|technology,https://spectrum.ieee.org/,open,firecrawl_search|source_scan,jina,rotate,TRUE,
+noema,Noema,en,global,ideas|technology|society,https://www.noemamag.com/,open,firecrawl_search|source_scan,jina,explore,TRUE,
+yale-e360,Yale Environment 360,en,global,climate|environment,https://e360.yale.edu/,open,firecrawl_search|source_scan,jina,explore,TRUE,
+inside-climate-news,Inside Climate News,en,US,climate|energy|investigation,https://insideclimatenews.org/,open,firecrawl_search|source_scan,jina,explore,TRUE,
+lawfare,Lawfare,en,US,law|security|technology,https://www.lawfaremedia.org/,open,firecrawl_search|source_scan,jina,explore,TRUE,
+war-on-the-rocks,War on the Rocks,en,global,security|geopolitics,https://warontherocks.com/,mixed,firecrawl_search|source_scan,jina,explore,TRUE,
+latepost,晚点LatePost,zh,中国,商业|科技|公司,https://www.latepost.com/,mixed,firecrawl_search|source_scan,jina,explore,TRUE,
+lifeweek,三联生活周刊,zh,中国,社会|文化|人物,https://www.lifeweek.com.cn/,mixed,firecrawl_search|source_scan,jina,explore,TRUE,
+inewsweek,中国新闻周刊,zh,中国,社会|公共政策,https://www.inewsweek.cn/,open,firecrawl_search|source_scan,jina,explore,TRUE,
+nfpeople,南方人物周刊,zh,中国,人物|社会|文化,https://www.nfpeople.com/,open,firecrawl_search|source_scan,jina,explore,TRUE,
+zhishifenzi,知识分子,zh,中国,科学|生命科学,https://www.zhishifenzi.com/,open,firecrawl_search|source_scan,jina,explore,TRUE,
+deeptech,DeepTech深科技,zh,中国,科技|生命科学|产业,https://www.deeptechchina.com/,mixed,firecrawl_search|source_scan,jina,explore,TRUE,
