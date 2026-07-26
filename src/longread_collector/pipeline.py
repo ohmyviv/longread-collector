@@ -12,7 +12,8 @@ from .clients import FirecrawlClient, JinaReaderClient
 from .config import Settings
 from .extraction import FallbackBudget, extract_article
 from .models import DiscoveredURL, ExtractedArticle
-from .normalization import canonicalize_url, stable_id
+from .normalization import canonicalize_url, domain_from_url, stable_id
+from .quality import filter_discovered
 from .sheets import GoogleSheetStore
 
 
@@ -102,16 +103,12 @@ class CollectorPipeline:
             discovered, discovery_logs = await self._discover(queries)
             summary["search_credits"] = sum(int(x.get("credits_used") or 0) for x in discovery_logs if x.get("success"))
             summary["urls_discovered"] = len(discovered)
-            deduped: list[DiscoveredURL] = []
-            seen: set[str] = set()
-            for item in discovered:
-                canonical = canonicalize_url(item.url)
-                if canonical in seen:
-                    continue
-                seen.add(canonical)
-                deduped.append(item)
-                if len(deduped) >= self.settings.max_urls_per_run:
-                    break
+            summary["sources_scanned"] = len({domain_from_url(canonicalize_url(item.url)) for item in discovered})
+            deduped, prefilter_rejections = filter_discovered(
+                discovered,
+                max_urls=self.settings.max_urls_per_run,
+                max_per_domain=2,
+            )
             existing = self.store.existing_article_ids()
             summary["urls_new"] = sum(1 for item in deduped if stable_id(canonicalize_url(item.url)) not in existing)
             articles = await self._extract_all(deduped, fallback_budget)
@@ -128,8 +125,15 @@ class CollectorPipeline:
             summary["scrape_attempts_today"] = used_today + actual_fallbacks
             summary["fallback_remaining"] = fallback_budget.remaining
             summary["final_status"] = "success"
+            rejection_counts: dict[str, int] = {}
+            for rejection in prefilter_rejections:
+                reason = rejection["reason"]
+                rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
             summary["notes"] = (
                 f"eligible_for_editor={sum(a.eligible_for_editor for a in articles)}; "
+                f"valid_extractions={sum(a.extraction_status == 'success' for a in articles)}; "
+                f"prefilter_rejected={len(prefilter_rejections)}; "
+                f"prefilter_reasons={rejection_counts}; "
                 f"discovery_failures={sum(not x.get('success', False) for x in discovery_logs)}"
             )
         except Exception as exc:

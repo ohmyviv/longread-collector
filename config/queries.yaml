@@ -1,125 +1,163 @@
 # Local fallback only. Production GitHub Actions reads the same rows from the
-# collector_queries tab in the Google Sheet.
+# collector_queries tab in the Google Sheet. v0.3 excludes obvious social,
+# job, login and listing sources before extraction.
 queries:
-  - id: en_investigation_fresh
-    group_id: intl_early
-    scheduled_time_bj: "23:20"
-    sequence: 1
-    language: en
-    query: 'long-form investigation public policy society feature'
-    limit: 8
-    tbs: 'qdr:d,sbd:1'
-  - id: en_science_fresh
-    group_id: intl_early
-    scheduled_time_bj: "23:20"
-    sequence: 2
-    language: en
-    query: 'deep science feature biology physics environment research magazine'
-    limit: 8
-    tbs: 'qdr:d,sbd:1'
-  - id: en_geopolitics_fresh
-    group_id: intl_early
-    scheduled_time_bj: "23:20"
-    sequence: 3
-    language: en
-    query: 'long-form geopolitics security political economy investigation'
-    limit: 8
-    tbs: 'qdr:d,sbd:1'
-  - id: en_ideas_deep
-    group_id: intl_early
-    scheduled_time_bj: "23:20"
-    sequence: 4
-    language: en
-    query: 'long essay ideas history culture society magazine'
-    limit: 8
-    tbs: 'qdr:w,sbd:1'
-
-  - id: en_ai_fresh
-    group_id: pre_report
-    scheduled_time_bj: "05:20"
-    sequence: 1
-    language: en
-    query: 'in-depth artificial intelligence industry policy investigation feature'
-    limit: 8
-    tbs: 'qdr:d,sbd:1'
-  - id: en_biomed_fresh
-    group_id: pre_report
-    scheduled_time_bj: "05:20"
-    sequence: 2
-    language: en
-    query: 'long-form biotechnology medicine clinical research health feature'
-    limit: 8
-    tbs: 'qdr:d,sbd:1'
-  - id: en_climate_energy_fresh
-    group_id: pre_report
-    scheduled_time_bj: "05:20"
-    sequence: 3
-    language: en
-    query: 'investigation climate energy infrastructure environment long read'
-    limit: 8
-    tbs: 'qdr:d,sbd:1'
-  - id: zh_investigation_fresh
-    group_id: pre_report
-    scheduled_time_bj: "05:20"
-    sequence: 4
-    language: zh
-    query: '深度 调查 报道 社会 公共政策 长文'
-    limit: 8
-    tbs: 'qdr:d,sbd:1'
-    country: CN
-
-  - id: zh_ai_fresh
-    group_id: zh_midday
-    scheduled_time_bj: "11:50"
-    sequence: 1
-    language: zh
-    query: '人工智能 科技 产业 深度 报道 调查 长文'
-    limit: 8
-    tbs: 'qdr:d,sbd:1'
-    country: CN
-  - id: zh_biomed_fresh
-    group_id: zh_midday
-    scheduled_time_bj: "11:50"
-    sequence: 2
-    language: zh
-    query: '生命科学 医疗 临床研究 深度 报道 长文'
-    limit: 8
-    tbs: 'qdr:d,sbd:1'
-    country: CN
-  - id: zh_science_deep
-    group_id: zh_midday
-    scheduled_time_bj: "11:50"
-    sequence: 3
-    language: zh
-    query: '科学 研究 解读 深度 长文 人物'
-    limit: 8
-    tbs: 'qdr:w,sbd:1'
-    country: CN
-
-  - id: zh_business_fresh
-    group_id: zh_evening
-    scheduled_time_bj: "17:50"
-    sequence: 1
-    language: zh
-    query: '公司 产业 商业 深度 调查 报道 长文'
-    limit: 8
-    tbs: 'qdr:d,sbd:1'
-    country: CN
-  - id: zh_policy_finance_fresh
-    group_id: zh_evening
-    scheduled_time_bj: "17:50"
-    sequence: 2
-    language: zh
-    query: '经济 金融 政策 治理 深度 分析 报道'
-    limit: 8
-    tbs: 'qdr:d,sbd:1'
-    country: CN
-  - id: zh_culture_society_deep
-    group_id: zh_evening
-    scheduled_time_bj: "17:50"
-    sequence: 3
-    language: zh
-    query: '文化 思想 人物 社会 叙事 长文 深度'
-    limit: 8
-    tbs: 'qdr:w,sbd:1'
-    country: CN
+- id: en_investigation_fresh
+  group_id: intl_early
+  scheduled_time_bj: '23:20'
+  sequence: 1
+  language: en
+  query: long-form investigation public policy society feature
+  limit: 8
+  tbs: qdr:d,sbd:1
+  exclude_domains: &id001
+  - facebook.com
+  - instagram.com
+  - threads.com
+  - linkedin.com
+  - x.com
+  - twitter.com
+  - youtube.com
+  - tiktok.com
+  - pinterest.com
+  - quora.com
+  - cliffsnotes.com
+  - ihirebiotechnology.com
+  - jobs.thermofisher.com
+  - ycombinator.com
+- id: en_science_fresh
+  group_id: intl_early
+  scheduled_time_bj: '23:20'
+  sequence: 2
+  language: en
+  query: deep science feature biology physics environment research magazine
+  limit: 8
+  tbs: qdr:d,sbd:1
+  exclude_domains: *id001
+- id: en_geopolitics_fresh
+  group_id: intl_early
+  scheduled_time_bj: '23:20'
+  sequence: 3
+  language: en
+  query: long-form geopolitics security political economy investigation
+  limit: 8
+  tbs: qdr:d,sbd:1
+  exclude_domains: *id001
+- id: en_ideas_deep
+  group_id: intl_early
+  scheduled_time_bj: '23:20'
+  sequence: 4
+  language: en
+  query: long essay ideas history culture society magazine
+  limit: 8
+  tbs: qdr:w,sbd:1
+  exclude_domains: *id001
+- id: en_ai_fresh
+  group_id: pre_report
+  scheduled_time_bj: 05:20
+  sequence: 1
+  language: en
+  query: in-depth artificial intelligence industry policy investigation feature
+  limit: 8
+  tbs: qdr:d,sbd:1
+  exclude_domains: *id001
+- id: en_biomed_fresh
+  group_id: pre_report
+  scheduled_time_bj: 05:20
+  sequence: 2
+  language: en
+  query: long-form biotechnology medicine clinical research health feature
+  limit: 8
+  tbs: qdr:d,sbd:1
+  exclude_domains: *id001
+- id: en_climate_energy_fresh
+  group_id: pre_report
+  scheduled_time_bj: 05:20
+  sequence: 3
+  language: en
+  query: investigation climate energy infrastructure environment long read
+  limit: 8
+  tbs: qdr:d,sbd:1
+  exclude_domains: *id001
+- id: zh_investigation_fresh
+  group_id: pre_report
+  scheduled_time_bj: 05:20
+  sequence: 4
+  language: zh
+  query: 深度 调查 报道 社会 公共政策 长文
+  limit: 8
+  tbs: qdr:d,sbd:1
+  country: CN
+  exclude_domains: &id002
+  - facebook.com
+  - instagram.com
+  - threads.com
+  - linkedin.com
+  - x.com
+  - twitter.com
+  - youtube.com
+  - tiktok.com
+  - pinterest.com
+  - zhihu.com
+  - baidu.com
+  - sogou.com
+- id: zh_ai_fresh
+  group_id: zh_midday
+  scheduled_time_bj: '11:50'
+  sequence: 1
+  language: zh
+  query: 人工智能 科技 产业 深度 报道 调查 长文
+  limit: 8
+  tbs: qdr:d,sbd:1
+  country: CN
+  exclude_domains: *id002
+- id: zh_biomed_fresh
+  group_id: zh_midday
+  scheduled_time_bj: '11:50'
+  sequence: 2
+  language: zh
+  query: 生命科学 医疗 临床研究 深度 报道 长文
+  limit: 8
+  tbs: qdr:d,sbd:1
+  country: CN
+  exclude_domains: *id002
+- id: zh_science_deep
+  group_id: zh_midday
+  scheduled_time_bj: '11:50'
+  sequence: 3
+  language: zh
+  query: 科学 研究 解读 深度 长文 人物
+  limit: 8
+  tbs: qdr:w,sbd:1
+  country: CN
+  exclude_domains: *id002
+- id: zh_business_fresh
+  group_id: zh_evening
+  scheduled_time_bj: '17:50'
+  sequence: 1
+  language: zh
+  query: 公司 产业 商业 深度 调查 报道 长文
+  limit: 8
+  tbs: qdr:d,sbd:1
+  country: CN
+  exclude_domains: *id002
+- id: zh_policy_finance_fresh
+  group_id: zh_evening
+  scheduled_time_bj: '17:50'
+  sequence: 2
+  language: zh
+  query: 经济 金融 政策 治理 深度 分析 报道
+  limit: 8
+  tbs: qdr:d,sbd:1
+  country: CN
+  exclude_domains: *id002
+- id: zh_culture_society_deep
+  group_id: zh_evening
+  scheduled_time_bj: '17:50'
+  sequence: 3
+  language: zh
+  query: 文化 思想 人物 社会 叙事 长文 深度
+  limit: 8
+  tbs: qdr:w,sbd:1
+  country: CN
+  exclude_domains: *id002
