@@ -6,6 +6,10 @@ from typing import Any
 
 @dataclass(slots=True)
 class CollectorRuntimeConfig:
+    max_urls_per_run: int = 32
+    max_concurrency_no_jina_key: int = 2
+    cache_hours: int = 168
+    firecrawl_fallback_daily_limit: int = 3
     directed_source_scans_per_run: int = 2
     directed_source_results_per_query: int = 4
     directed_source_freshness: str = "qdr:d3"
@@ -17,7 +21,13 @@ class CollectorRuntimeConfig:
     shadow_ab_writeback: bool = True
 
 
-def _as_int(value: Any, default: int, *, minimum: int = 0, maximum: int = 100) -> int:
+def _as_int(
+    value: Any,
+    default: int,
+    *,
+    minimum: int = 0,
+    maximum: int = 1000,
+) -> int:
     try:
         parsed = int(float(value))
     except (TypeError, ValueError):
@@ -44,7 +54,19 @@ def load_collector_runtime_config(store: object) -> CollectorRuntimeConfig:
         for row in rows
         if str(row.get("status", "")).strip().lower() == "active"
     }
-    return CollectorRuntimeConfig(
+    runtime = CollectorRuntimeConfig(
+        max_urls_per_run=_as_int(
+            active.get("max_urls_per_run"), 32, minimum=1, maximum=100
+        ),
+        max_concurrency_no_jina_key=_as_int(
+            active.get("max_concurrency_no_jina_key"), 2, minimum=1, maximum=20
+        ),
+        cache_hours=_as_int(
+            active.get("cache_hours"), 168, minimum=1, maximum=24 * 30
+        ),
+        firecrawl_fallback_daily_limit=_as_int(
+            active.get("firecrawl_fallback_daily_limit"), 3, maximum=100
+        ),
         directed_source_scans_per_run=_as_int(
             active.get("directed_source_scans_per_run"), 2, maximum=10
         ),
@@ -71,3 +93,16 @@ def load_collector_runtime_config(store: object) -> CollectorRuntimeConfig:
         ),
         shadow_ab_writeback=_as_bool(active.get("shadow_ab_writeback"), True),
     )
+
+    # Environment variables remain bootstrap defaults for GitHub Actions. Once
+    # the Sheet is reachable, active collector_config values become authoritative.
+    settings = getattr(store, "settings", None)
+    if settings is not None:
+        settings.max_urls_per_run = runtime.max_urls_per_run
+        settings.cache_hours = runtime.cache_hours
+        settings.firecrawl_fallback_daily_limit = (
+            runtime.firecrawl_fallback_daily_limit
+        )
+        if not getattr(settings, "jina_api_key", None):
+            settings.max_concurrency = runtime.max_concurrency_no_jina_key
+    return runtime
