@@ -16,6 +16,7 @@ from .extraction import FallbackBudget, extract_article
 from .models import DiscoveredURL, ExtractedArticle
 from .normalization import canonicalize_url, domain_from_url, stable_id
 from .quality import filter_discovered
+from .shadow import append_shadow_ab
 from .sheets import GoogleSheetStore
 
 
@@ -45,7 +46,8 @@ def build_directed_source_queries(
     if not sources or max_sources <= 0:
         return []
     offset = started.toordinal() + started.hour + sum(ord(char) for char in (group_id or "all"))
-    ordered = sources[offset % len(sources):] + sources[: offset % len(sources)]
+    rotation = offset % len(sources)
+    ordered = sources[rotation:] + sources[:rotation]
     selected = ordered[: min(max_sources, len(ordered))]
     result: list[dict[str, Any]] = []
     for sequence, source in enumerate(selected, start=1):
@@ -243,6 +245,13 @@ class CollectorPipeline:
             )
             summary["written_cache"] = self.store.upsert_articles(run_id, pairs)
             self.store.append_extraction_logs(articles)
+            append_shadow_ab(
+                self.store,
+                run_id=run_id,
+                query_group=group_id or "all",
+                articles=articles,
+                completed_at=datetime.now(self.tz),
+            )
             actual_fallbacks = sum(
                 1
                 for article in articles
