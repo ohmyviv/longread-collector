@@ -13,6 +13,11 @@ class CollectorRuntimeConfig:
     directed_source_scans_per_run: int = 2
     directed_source_results_per_query: int = 4
     directed_source_freshness: str = "qdr:d3"
+    native_source_scans_per_run: int = 8
+    native_source_results_per_source: int = 6
+    native_source_timeout_seconds: int = 15
+    native_source_concurrency: int = 10
+    native_source_freshness_days: int = 3
     source_chase_max_per_run: int = 3
     source_chase_results_per_query: int = 4
     source_chase_freshness: str = "qdr:m"
@@ -68,7 +73,7 @@ def load_collector_runtime_config(store: object) -> CollectorRuntimeConfig:
             active.get("firecrawl_fallback_daily_limit"), 3, maximum=100
         ),
         directed_source_scans_per_run=_as_int(
-            active.get("directed_source_scans_per_run"), 2, maximum=10
+            active.get("directed_source_scans_per_run"), 2, maximum=20
         ),
         directed_source_results_per_query=_as_int(
             active.get("directed_source_results_per_query"), 4, minimum=1, maximum=10
@@ -76,6 +81,21 @@ def load_collector_runtime_config(store: object) -> CollectorRuntimeConfig:
         directed_source_freshness=str(
             active.get("directed_source_freshness") or "qdr:d3"
         ).strip(),
+        native_source_scans_per_run=_as_int(
+            active.get("native_source_scans_per_run"), 8, minimum=1, maximum=50
+        ),
+        native_source_results_per_source=_as_int(
+            active.get("native_source_results_per_source"), 6, minimum=1, maximum=20
+        ),
+        native_source_timeout_seconds=_as_int(
+            active.get("native_source_timeout_seconds"), 15, minimum=3, maximum=60
+        ),
+        native_source_concurrency=_as_int(
+            active.get("native_source_concurrency"), 10, minimum=1, maximum=30
+        ),
+        native_source_freshness_days=_as_int(
+            active.get("native_source_freshness_days"), 3, minimum=1, maximum=14
+        ),
         source_chase_max_per_run=_as_int(
             active.get("source_chase_max_per_run"), 3, maximum=10
         ),
