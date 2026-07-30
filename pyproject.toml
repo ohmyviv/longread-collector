@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "longread-collector"
-version = "0.3.0"
-description = "Firecrawl discovery + Jina Reader extraction pipeline for the daily longread workflow"
+version = "0.4.0"
+description = "Source-aware discovery, extraction, semantic classification and shadow evaluation for the daily longread workflow"
 requires-python = ">=3.11"
 dynamic = ["dependencies"]
 
