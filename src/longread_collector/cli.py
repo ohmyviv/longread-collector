@@ -17,6 +17,12 @@ from .pipeline import CollectorPipeline
 from .sheets import GoogleSheetStore
 
 app = typer.Typer(no_args_is_help=True)
+V04_REQUIRED_SHEETS = {
+    "collector_ground_truth",
+    "collector_evaluations",
+    "collector_shadow_ab",
+    "collector_health",
+}
 
 
 @app.command()
@@ -48,8 +54,14 @@ def doctor(
     """Validate credentials, Sheet schema, query groups, and optional APIs."""
     settings = get_settings()
     store = GoogleSheetStore(settings)
+    actual_sheets = {worksheet.title for worksheet in store.book.worksheets()}
+    missing_v04_sheets = sorted(V04_REQUIRED_SHEETS - actual_sheets)
     report: dict[str, object] = {
         "sheet": store.health_check(),
+        "v04_schema": {
+            "missing_sheets": missing_v04_sheets,
+            "ok": not missing_v04_sheets,
+        },
         "groups": {},
         "directed_sources": {},
         "jina": "not_tested",
@@ -98,6 +110,7 @@ def doctor(
     typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
     if (
         not report["sheet"]["ok"]
+        or not report["v04_schema"]["ok"]
         or any(value == 0 for value in report["groups"].values())
         or any(value == 0 for value in report["directed_sources"].values())
     ):
