@@ -9,7 +9,7 @@ def test_media_site_social_post_becomes_article_lead() -> None:
         title="StateCollege.com",
         description=(
             "Environmental groups say the data-center bill is not substantive, "
-            "according to a detailed report published by the newsroom."
+            "and the newsroom has published a detailed account of the dispute."
         ),
     )
     assert result.page_role == "discovery_lead"
