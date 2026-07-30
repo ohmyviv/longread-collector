@@ -1,6 +1,6 @@
 name: V0.4 ground-truth evaluation
 
-# Controlled evaluation iteration 2: source-lead and batch-dedupe fixes.
+# Controlled evaluation iteration 3: final false-positive fixes.
 on:
   push:
     branches:
