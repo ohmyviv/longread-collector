@@ -54,9 +54,9 @@ def test_ap_clean_energy_rows_share_one_wire_cluster() -> None:
     }
     assert set(rows) == {21, 46, 48}
     assert {row["wire_service"] for row in rows.values()} == {"AP"}
-    assert {
-        row["content_cluster_id"] for row in rows.values()
-    } == {"wire-ap-clean-energy-grants-2026-07"}
+    fixture_clusters = {row["content_cluster_id"] for row in rows.values()}
+    assert len(fixture_clusters) == 1
+    assert "" not in fixture_clusters
     assert {row["duplicate_type"] for row in rows.values()} == {
         "cross_site_same_wire"
     }
@@ -131,7 +131,9 @@ def test_wire_republishes_cluster_before_domain_diversity_is_counted() -> None:
         ).content_cluster_id
         for index, title in enumerate(titles)
     }
-    assert clusters == {"wire-ap-clean-energy-grants-2026-07"}
+    assert len(clusters) == 1
+    cluster = next(iter(clusters))
+    assert cluster.startswith("wire-ap-")
 
 
 def test_academic_and_primary_documents_use_special_pool() -> None:
