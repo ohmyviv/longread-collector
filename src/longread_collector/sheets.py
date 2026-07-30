@@ -9,6 +9,7 @@ from google.oauth2.service_account import Credentials
 
 from .clients import compact_json
 from .config import Settings
+from .dedupe import apply_batch_duplicate_clusters
 from .models import DiscoveredURL, ExtractedArticle
 
 SCOPES = [
@@ -74,6 +75,7 @@ class GoogleSheetStore:
         required = {
             "source_registry", "article_cache", "extraction_log", "collector_runs",
             "collector_queries", "collector_config", "collector_health", "collector_ground_truth",
+            "collector_evaluations", "collector_shadow_ab",
         }
         actual = {ws.title for ws in self.book.worksheets()}
         missing = sorted(required - actual)
@@ -104,7 +106,6 @@ class GoogleSheetStore:
         return sorted(result, key=lambda x: (str(x.get("group_id", "")), int(x.get("sequence", 0))))
 
     def load_source_registry(self, language: str | None = None) -> list[dict[str, Any]]:
-        """Return enabled directed sources for source-aware discovery."""
         ws = self.book.worksheet("source_registry")
         rows = ws.get_all_records(expected_headers=SOURCE_HEADERS)
         result: list[dict[str, Any]] = []
@@ -172,6 +173,8 @@ class GoogleSheetStore:
         run_id: str,
         pairs: Iterable[tuple[DiscoveredURL, ExtractedArticle]],
     ) -> int:
+        pair_list = list(pairs)
+        apply_batch_duplicate_clusters(article for _, article in pair_list)
         ws = self.book.worksheet("article_cache")
         id_rows = self.existing_article_ids()
         known_sources = self.existing_sources_30d()
@@ -179,7 +182,7 @@ class GoogleSheetStore:
         new_rows: list[list[object]] = []
         updates: list[tuple[int, list[object]]] = []
         written = 0
-        for discovered, article in pairs:
+        for discovered, article in pair_list:
             is_new_source = bool(
                 article.canonical_source and article.canonical_source not in known_sources
             )
@@ -259,7 +262,6 @@ class GoogleSheetStore:
         return ""
 
     def maybe_auto_promote(self) -> dict[str, Any]:
-        """Read the named promotion gate; auto-promotion remains opt-in."""
         config_ws = self.book.worksheet("collector_config")
         rows = config_ws.get_all_records()
         config_rows = {
