@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +27,7 @@ CSV_HEADERS = [
     "enabled",
     "notes",
 ]
+SOURCE_ID_ALIASES = {"eoo": "eeo"}
 
 
 def load_seed(path: Path) -> list[dict[str, str]]:
@@ -38,7 +38,10 @@ def load_seed(path: Path) -> list[dict[str, str]]:
                 f"unexpected source registry CSV headers: {reader.fieldnames!r}"
             )
         rows = [dict(row) for row in reader]
-    ids = [row["source_id"].strip() for row in rows]
+    for row in rows:
+        source_id = row["source_id"].strip()
+        row["source_id"] = SOURCE_ID_ALIASES.get(source_id, source_id)
+    ids = [row["source_id"] for row in rows]
     if any(not source_id for source_id in ids):
         raise ValueError("source registry seed contains a blank source_id")
     if len(ids) != len(set(ids)):
