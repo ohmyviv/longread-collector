@@ -58,19 +58,13 @@ class ExtractedArticle:
     extraction_attempts: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        """Apply the v0.4 semantic contract after technical extraction.
-
-        Extraction code may continue constructing the v0.3-compatible object.
-        This boundary ensures every persisted article receives one semantic
-        disposition and that ``eligible_for_editor`` is derived only from a
-        formal-candidate disposition.
-        """
-
+        """Apply the v0.4 semantic contract after technical extraction."""
         if self.classification_version:
             return
 
         from .classification import CLASSIFICATION_VERSION, classify_candidate
 
+        technical_eligible_before = self.eligible_for_editor
         result = classify_candidate(
             url=self.url,
             title=self.title,
@@ -109,6 +103,7 @@ class ExtractedArticle:
         self.metadata["classification"].update(
             {
                 "version": CLASSIFICATION_VERSION,
+                "technical_eligible_before": technical_eligible_before,
                 "page_role": self.page_role,
                 "page_type": self.page_type,
                 "content_type": self.content_type,
