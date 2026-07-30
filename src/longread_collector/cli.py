@@ -10,10 +10,10 @@ import uvicorn
 
 from .clients import FirecrawlClient, JinaReaderClient
 from .config import get_settings
-from .evaluation import evaluate_ground_truth
 from .extraction import extract_article
 from .models import DiscoveredURL
 from .pipeline import CollectorPipeline
+from .release_evaluation import evaluate_release_ground_truth
 from .sheets import GoogleSheetStore
 
 app = typer.Typer(no_args_is_help=True)
@@ -40,7 +40,7 @@ def collect(
 def evaluate_ground_truth_command() -> None:
     """Evaluate v0.4 against the fixed 48-item release fixture."""
     store = GoogleSheetStore(get_settings())
-    result = evaluate_ground_truth(store)
+    result = evaluate_release_ground_truth(store)
     typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
 
