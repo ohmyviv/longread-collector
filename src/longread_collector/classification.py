@@ -42,6 +42,19 @@ SOURCE_LEAD_PATTERN = re.compile(
     r"original report|according to|foreign policy|原文|调查|报告全文|完整政策)",
     re.IGNORECASE,
 )
+SOCIAL_MEDIA_SITE_TITLE_PATTERN = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9.-]{1,80}\.(?:com|org|net|news)$",
+    re.IGNORECASE,
+)
+PARTY_ACCOUNT_PATTERN = re.compile(
+    r"(party|greenparty|political[-_ ]?party)",
+    re.IGNORECASE,
+)
+POLICY_PROPOSAL_PATTERN = re.compile(
+    r"(plan|policy|rules?|public interest|consent(?:ing)?|government|"
+    r"data cent(?:re|er)s?|should pay|resource use|manifesto)",
+    re.IGNORECASE,
+)
 WIRE_AP_PATTERN = re.compile(
     r"(\bassociated press\b|\bthe associated press\b|\bap news\b|\bby ap\b|—\s*ap\b)",
     re.IGNORECASE,
@@ -224,6 +237,30 @@ def classify_candidate(
                 page_role="discovery_lead", page_type="social_or_ugc", content_type=content_type,
                 disposition="original_source_required", source_relationship=relationship,
                 source_action=action, confidence="medium", reason="credible_source_lead",
+            )
+        if (
+            PARTY_ACCOUNT_PATTERN.search(f"{url} {title}")
+            and POLICY_PROPOSAL_PATTERN.search(sample)
+            and len(description.strip()) >= 80
+        ):
+            return _result(
+                page_role="discovery_lead", page_type="social_or_ugc",
+                content_type="primary_statement",
+                disposition="original_source_required", source_relationship="original",
+                source_action="find_primary_document", confidence="medium",
+                reason="party_policy_social_lead",
+            )
+        if (
+            SOCIAL_MEDIA_SITE_TITLE_PATTERN.fullmatch(title.strip())
+            and len(description.strip()) >= 80
+        ):
+            return _result(
+                page_role="discovery_lead", page_type="social_or_ugc",
+                content_type="reported_article",
+                disposition="original_source_required",
+                source_relationship="secondary_republish",
+                source_action="find_original_article", confidence="medium",
+                reason="media_site_social_lead",
             )
         return _result(
             page_role="non_content", page_type="social_or_ugc",
