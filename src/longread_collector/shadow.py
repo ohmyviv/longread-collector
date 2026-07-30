@@ -4,6 +4,7 @@ from collections import Counter
 from datetime import datetime
 from typing import Iterable
 
+from .audit import record_auxiliary_error
 from .models import ExtractedArticle
 
 CRITICAL_NON_CONTENT_PAGE_TYPES = {
@@ -82,18 +83,18 @@ def append_shadow_ab(
     query_group: str,
     articles: Iterable[ExtractedArticle],
     completed_at: datetime,
-) -> None:
-    """Append one shadow comparison row through an existing Sheet store.
-
-    ``store`` intentionally uses a structural interface so this module remains
-    independently testable: it only requires ``store.book.worksheet``.
-    """
-
-    row = build_shadow_row(
-        run_id=run_id,
-        completed_at_bj=completed_at.strftime("%Y-%m-%d %H:%M:%S"),
-        query_group=query_group,
-        articles=articles,
-    )
-    worksheet = store.book.worksheet("collector_shadow_ab")
-    worksheet.append_row(row, value_input_option="USER_ENTERED")
+) -> bool:
+    """Append one shadow comparison row without blocking the main cache write."""
+    try:
+        row = build_shadow_row(
+            run_id=run_id,
+            completed_at_bj=completed_at.strftime("%Y-%m-%d %H:%M:%S"),
+            query_group=query_group,
+            articles=articles,
+        )
+        worksheet = store.book.worksheet("collector_shadow_ab")
+        worksheet.append_row(row, value_input_option="USER_ENTERED")
+        return True
+    except Exception as exc:  # pragma: no cover - provider failures
+        record_auxiliary_error(store, "collector_shadow_ab", exc)
+        return False
