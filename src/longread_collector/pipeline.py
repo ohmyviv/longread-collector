@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
+from .classification import classify_candidate
 from .clients import FirecrawlClient, JinaReaderClient
 from .config import Settings
 from .extraction import FallbackBudget, extract_article
@@ -18,6 +19,7 @@ from .normalization import canonicalize_url, domain_from_url, stable_id
 from .quality import filter_discovered
 from .shadow import append_shadow_ab
 from .sheets import GoogleSheetStore
+from .source_chase import SourceChaseQuery, build_source_chase_queries
 
 
 def load_queries(path: Path, group_id: str | None = None) -> list[dict[str, Any]]:
@@ -116,14 +118,65 @@ class CollectorPipeline:
                     or query_cfg["query"]
                 )
                 item.metadata["query_group"] = str(query_cfg.get("group_id", ""))
-                item.metadata["scheduled_time_bj"] = str(
-                    query_cfg.get("scheduled_time_bj", "")
-                )
+                item.metadata["scheduled_time_bj"] = str(query_cfg.get("scheduled_time_bj", ""))
                 item.metadata["purpose"] = str(query_cfg.get("purpose", ""))
                 item.metadata["source_id"] = str(query_cfg.get("source_id", ""))
             return results, {
                 "query_id": query_cfg.get("query_id") or query_cfg.get("id"),
                 "purpose": query_cfg.get("purpose", ""),
+                **meta,
+            }
+
+        output = await asyncio.gather(
+            *(one(query) for query in queries), return_exceptions=True
+        )
+        found: list[DiscoveredURL] = []
+        logs: list[dict[str, Any]] = []
+        for item in output:
+            if isinstance(item, Exception):
+                logs.append(
+                    {
+                        "success": False,
+                        "error_type": type(item).__name__,
+                        "error_message": str(item),
+                    }
+                )
+                continue
+            results, meta = item
+            found.extend(results)
+            logs.append({"success": True, **meta})
+        return found, logs
+
+    async def _chase_sources(
+        self,
+        queries: list[SourceChaseQuery],
+    ) -> tuple[list[DiscoveredURL], list[dict[str, Any]]]:
+        async def one(query_cfg: SourceChaseQuery):
+            results, meta = await self.firecrawl.search(
+                query_cfg.query,
+                limit=4,
+                tbs="qdr:m",
+                include_domains=query_cfg.include_domains,
+            )
+            accepted: list[DiscoveredURL] = []
+            for item in results:
+                preview = classify_candidate(
+                    url=item.url,
+                    title=item.title,
+                    description=item.description,
+                )
+                if preview.page_type == "social_or_ugc":
+                    continue
+                item.discovery_method = "source_chase"
+                item.query_or_source = f"source_chase:{query_cfg.parent_article_id}"
+                item.language = query_cfg.language
+                item.metadata["purpose"] = "original_source_chase"
+                item.metadata["source_chase_parent_article_id"] = query_cfg.parent_article_id
+                item.metadata["source_chase_include_domains"] = query_cfg.include_domains
+                accepted.append(item)
+            return accepted, {
+                "parent_article_id": query_cfg.parent_article_id,
+                "include_domains": query_cfg.include_domains,
                 **meta,
             }
 
@@ -174,11 +227,13 @@ class CollectorPipeline:
         started = datetime.now(self.tz)
         run_id = f"COL-{started.strftime('%Y%m%d-%H%M%S')}-BJT-{group_id or 'all'}"
         directed_queries: list[dict[str, Any]] = []
+        source_registry: list[dict[str, Any]] = []
         if query_file is None:
             queries = self.store.load_queries(group_id)
             language = "zh" if str(group_id or "").startswith("zh_") else "en"
+            source_registry = self.store.load_source_registry(language)
             directed_queries = build_directed_source_queries(
-                self.store.load_source_registry(language),
+                source_registry,
                 group_id=group_id,
                 started=started,
             )
@@ -189,15 +244,12 @@ class CollectorPipeline:
             raise ValueError(f"No enabled queries found for group={group_id!r}")
 
         used_today = self.store.count_firecrawl_scrapes_today()
-        remaining = max(
-            0,
-            self.settings.firecrawl_fallback_daily_limit - used_today,
-        )
+        remaining = max(0, self.settings.firecrawl_fallback_daily_limit - used_today)
         fallback_budget = FallbackBudget(remaining=remaining)
         summary: dict[str, Any] = {
             "collector_run_id": run_id,
             "started_at_bj": started.strftime("%Y-%m-%d %H:%M:%S"),
-            "mode": "source_registry+firecrawl_search+jina_reader+budgeted_firecrawl_fallback",
+            "mode": "source_registry+firecrawl_search+jina_reader+source_chase+budgeted_firecrawl_fallback",
             "query_group": group_id or "all",
             "queries_count": len(queries),
             "sources_scanned": len(directed_queries),
@@ -206,12 +258,7 @@ class CollectorPipeline:
         }
         try:
             discovered, discovery_logs = await self._discover(queries)
-            summary["search_credits"] = sum(
-                int(log.get("credits_used") or 0)
-                for log in discovery_logs
-                if log.get("success")
-            )
-            summary["urls_discovered"] = len(discovered)
+            initial_discovered_count = len(discovered)
             discovered_domains = {
                 domain_from_url(canonicalize_url(item.url)) for item in discovered
             }
@@ -220,80 +267,145 @@ class CollectorPipeline:
                 max_urls=self.settings.max_urls_per_run,
                 max_per_domain=2,
             )
+            articles = await self._extract_all(deduped, fallback_budget)
+
+            chase_queries = build_source_chase_queries(
+                articles,
+                source_registry,
+                limit=3,
+            )
+            chased_discovered, chase_logs = await self._chase_sources(chase_queries)
+            initial_urls = {canonicalize_url(item.url) for item in deduped}
+            chased_discovered = [
+                item
+                for item in chased_discovered
+                if canonicalize_url(item.url) not in initial_urls
+            ]
+            chased_deduped, chase_prefilter_rejections = filter_discovered(
+                chased_discovered,
+                max_urls=12,
+                max_per_domain=2,
+            )
+            chased_articles = await self._extract_all(chased_deduped, fallback_budget)
+
+            parents = {article.article_id: article for article in articles}
+            source_chase_resolved = 0
+            for discovered_item, chased_article in zip(
+                chased_deduped,
+                chased_articles,
+                strict=True,
+            ):
+                parent_id = str(
+                    discovered_item.metadata.get("source_chase_parent_article_id", "")
+                )
+                parent = parents.get(parent_id)
+                if parent is None:
+                    continue
+                included_domains = set(
+                    discovered_item.metadata.get("source_chase_include_domains", [])
+                )
+                resolved = (
+                    chased_article.candidate_disposition
+                    in {"formal_candidate", "special_candidate"}
+                    or chased_article.domain in included_domains
+                )
+                if resolved:
+                    parent.original_url = chased_article.url_canonical
+                    parent.canonical_source = chased_article.canonical_source
+                    parent.metadata.setdefault("source_chase", {})
+                    parent.metadata["source_chase"].update(
+                        {
+                            "resolved": True,
+                            "resolved_article_id": chased_article.article_id,
+                            "resolved_url": chased_article.url_canonical,
+                        }
+                    )
+                    source_chase_resolved += 1
+
+            all_discovered = deduped + chased_deduped
+            all_articles = articles + chased_articles
+            pairs = list(zip(all_discovered, all_articles, strict=True))
             existing = self.store.existing_article_ids()
+            summary["urls_discovered"] = initial_discovered_count + len(chased_discovered)
             summary["urls_new"] = sum(
                 1
-                for item in deduped
+                for item in all_discovered
                 if stable_id(canonicalize_url(item.url)) not in existing
             )
-            articles = await self._extract_all(deduped, fallback_budget)
-            pairs = list(zip(deduped, articles, strict=True))
             summary["jina_success"] = sum(
                 1
-                for article in articles
+                for article in all_articles
                 if article.extractor_used == "jina"
                 and article.extraction_status == "success"
             )
             summary["firecrawl_success"] = sum(
                 1
-                for article in articles
+                for article in all_articles
                 if article.extractor_used == "firecrawl"
                 and article.extraction_status == "success"
             )
             summary["failed"] = sum(
-                1 for article in articles if article.extraction_status != "success"
+                1 for article in all_articles if article.extraction_status != "success"
             )
             summary["written_cache"] = self.store.upsert_articles(run_id, pairs)
-            self.store.append_extraction_logs(articles)
+            self.store.append_extraction_logs(all_articles)
             append_shadow_ab(
                 self.store,
                 run_id=run_id,
                 query_group=group_id or "all",
-                articles=articles,
+                articles=all_articles,
                 completed_at=datetime.now(self.tz),
             )
             actual_fallbacks = sum(
                 1
-                for article in articles
+                for article in all_articles
                 for attempt in article.extraction_attempts
                 if attempt.get("extractor") == "firecrawl"
                 and attempt.get("error_type") != "DailyFallbackBudgetExhausted"
             )
             summary["scrape_attempts_today"] = used_today + actual_fallbacks
             summary["fallback_remaining"] = fallback_budget.remaining
+            summary["search_credits"] = sum(
+                int(log.get("credits_used") or 0)
+                for log in discovery_logs + chase_logs
+                if log.get("success")
+            )
             summary["final_status"] = "success"
 
-            rejection_counts = Counter(
-                rejection["reason"] for rejection in prefilter_rejections
-            )
+            all_rejections = prefilter_rejections + chase_prefilter_rejections
+            rejection_counts = Counter(item["reason"] for item in all_rejections)
             disposition_counts = Counter(
-                article.candidate_disposition for article in articles
+                article.candidate_disposition for article in all_articles
             )
-            page_role_counts = Counter(article.page_role for article in articles)
+            page_role_counts = Counter(article.page_role for article in all_articles)
             canonical_sources = {
                 article.canonical_source
-                for article in articles
+                for article in all_articles
                 if article.canonical_source
                 and article.candidate_disposition != "reject"
             }
             content_clusters = {
                 article.content_cluster_id
-                for article in articles
+                for article in all_articles
                 if article.content_cluster_id
             }
             summary["notes"] = (
                 f"classification_version=collector-v0.4.0; "
                 f"dispositions={dict(disposition_counts)}; "
                 f"page_roles={dict(page_role_counts)}; "
-                f"eligible_for_editor={sum(article.eligible_for_editor for article in articles)}; "
-                f"valid_extractions={sum(article.extraction_status == 'success' for article in articles)}; "
+                f"eligible_for_editor={sum(article.eligible_for_editor for article in all_articles)}; "
+                f"valid_extractions={sum(article.extraction_status == 'success' for article in all_articles)}; "
                 f"directed_sources={len(directed_queries)}; "
+                f"source_chase_attempts={len(chase_queries)}; "
+                f"source_chase_results={len(chased_deduped)}; "
+                f"source_chase_resolved={source_chase_resolved}; "
                 f"discovered_technical_domains={len(discovered_domains)}; "
                 f"nonreject_canonical_sources={len(canonical_sources)}; "
                 f"content_clusters={len(content_clusters)}; "
-                f"prefilter_rejected={len(prefilter_rejections)}; "
+                f"prefilter_rejected={len(all_rejections)}; "
                 f"prefilter_reasons={dict(rejection_counts)}; "
-                f"discovery_failures={sum(not log.get('success', False) for log in discovery_logs)}"
+                f"discovery_failures={sum(not log.get('success', False) for log in discovery_logs)}; "
+                f"source_chase_failures={sum(not log.get('success', False) for log in chase_logs)}"
             )
         except Exception as exc:
             summary["final_status"] = "failed"
@@ -311,8 +423,6 @@ class CollectorPipeline:
                 except Exception as promote_exc:
                     summary["promotion"] = {
                         "promoted": False,
-                        "error": (
-                            f"{type(promote_exc).__name__}: {promote_exc}"
-                        )[:1000],
+                        "error": f"{type(promote_exc).__name__}: {promote_exc}"[:1000],
                     }
         return summary
