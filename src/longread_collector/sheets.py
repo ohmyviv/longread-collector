@@ -9,6 +9,7 @@ from google.oauth2.service_account import Credentials
 
 from .clients import compact_json
 from .config import Settings
+from .dedupe import apply_batch_duplicate_clusters
 from .models import DiscoveredURL, ExtractedArticle
 
 SCOPES = [
@@ -23,6 +24,10 @@ ARTICLE_HEADERS = [
     "verification_level", "content_chars", "content_sha256", "content_markdown", "content_truncated",
     "metadata_json", "discovered_rank", "is_new_source_30d", "eligible_for_editor", "reject_reason",
     "first_seen_at_bj", "last_extracted_at_bj", "expires_at_bj", "selected_run_id", "selected_status", "notes",
+    "page_role", "page_type", "content_type", "candidate_disposition", "special_candidate_type",
+    "source_relationship", "original_publisher", "original_url", "wire_service", "source_action",
+    "duplicate_type", "content_cluster_id", "classification_confidence", "classification_version",
+    "classification_reason",
 ]
 
 EXTRACTION_HEADERS = [
@@ -44,10 +49,20 @@ QUERY_HEADERS = [
     "updated_at_bj",
 ]
 
+SOURCE_HEADERS = [
+    "source_id", "source_name", "language", "country_region", "subject_groups", "homepage_url", "rss_url",
+    "sitemap_url", "news_sitemap_url", "author_pages", "newsletter_url", "access_type",
+    "discovery_method", "preferred_extractor", "parser_config_json", "priority_tier", "enabled",
+    "last_scanned_at_bj", "parser_success_rate_30d", "discovered_30d", "extracted_30d", "selected_30d",
+    "notes", "updated_at_bj",
+]
+
 
 class GoogleSheetStore:
     def __init__(self, settings: Settings) -> None:
-        creds = Credentials.from_service_account_file(str(settings.google_service_account_file), scopes=SCOPES)
+        creds = Credentials.from_service_account_file(
+            str(settings.google_service_account_file), scopes=SCOPES
+        )
         self.client = gspread.authorize(creds)
         self.book = self.client.open_by_key(settings.google_sheet_id)
         self.settings = settings
@@ -59,7 +74,8 @@ class GoogleSheetStore:
     def health_check(self) -> dict[str, Any]:
         required = {
             "source_registry", "article_cache", "extraction_log", "collector_runs",
-            "collector_queries", "collector_config",
+            "collector_queries", "collector_config", "collector_health", "collector_ground_truth",
+            "collector_evaluations", "collector_shadow_ab",
         }
         actual = {ws.title for ws in self.book.worksheets()}
         missing = sorted(required - actual)
@@ -88,6 +104,33 @@ class GoogleSheetStore:
                 item["sequence"] = 0
             result.append(item)
         return sorted(result, key=lambda x: (str(x.get("group_id", "")), int(x.get("sequence", 0))))
+
+    def load_source_registry(self, language: str | None = None) -> list[dict[str, Any]]:
+        ws = self.book.worksheet("source_registry")
+        rows = ws.get_all_records(expected_headers=SOURCE_HEADERS)
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            enabled = str(row.get("enabled", "")).strip().upper() in {"TRUE", "1", "YES", "Y"}
+            if not enabled:
+                continue
+            if language and str(row.get("language", "")).strip() != language:
+                continue
+            item = dict(row)
+            item["subject_groups"] = [
+                value.strip() for value in str(item.get("subject_groups", "")).split("|") if value.strip()
+            ]
+            item["discovery_method"] = [
+                value.strip() for value in str(item.get("discovery_method", "")).split("|") if value.strip()
+            ]
+            result.append(item)
+        priority = {"rotate": 0, "explore": 1, "monitor": 2}
+        return sorted(
+            result,
+            key=lambda item: (
+                priority.get(str(item.get("priority_tier", "")).strip(), 9),
+                str(item.get("source_id", "")),
+            ),
+        )
 
     def existing_article_ids(self) -> dict[str, int]:
         ws = self.book.worksheet("article_cache")
@@ -125,7 +168,13 @@ class GoogleSheetStore:
             and str(row.get("error_type", "")).strip() != "DailyFallbackBudgetExhausted"
         )
 
-    def upsert_articles(self, run_id: str, pairs: Iterable[tuple[DiscoveredURL, ExtractedArticle]]) -> int:
+    def upsert_articles(
+        self,
+        run_id: str,
+        pairs: Iterable[tuple[DiscoveredURL, ExtractedArticle]],
+    ) -> int:
+        pair_list = list(pairs)
+        apply_batch_duplicate_clusters(article for _, article in pair_list)
         ws = self.book.worksheet("article_cache")
         id_rows = self.existing_article_ids()
         known_sources = self.existing_sources_30d()
@@ -133,35 +182,52 @@ class GoogleSheetStore:
         new_rows: list[list[object]] = []
         updates: list[tuple[int, list[object]]] = []
         written = 0
-        for discovered, article in pairs:
-            is_new_source = bool(article.canonical_source and article.canonical_source not in known_sources)
+        for discovered, article in pair_list:
+            is_new_source = bool(
+                article.canonical_source and article.canonical_source not in known_sources
+            )
             row = [
-                article.article_id, now.strftime("%Y-%m-%d %H:%M:%S"), run_id, discovered.discovery_method,
-                discovered.query_or_source, article.url, article.url_canonical, article.domain, article.title,
-                article.author, article.published_at, article.language or discovered.language, article.canonical_source,
-                article.hosting_source, article.description, article.extractor_used, article.extraction_status,
-                article.verification_level, article.content_chars, article.content_sha256, article.content_markdown,
-                str(article.content_truncated).upper(), compact_json(article.metadata), discovered.rank,
-                str(is_new_source).upper(), str(article.eligible_for_editor).upper(), article.reject_reason,
-                now.strftime("%Y-%m-%d %H:%M:%S"), now.strftime("%Y-%m-%d %H:%M:%S"),
-                (now + timedelta(hours=self.settings.cache_hours)).strftime("%Y-%m-%d %H:%M:%S"), "", "", "",
+                article.article_id, now.strftime("%Y-%m-%d %H:%M:%S"), run_id,
+                discovered.discovery_method, discovered.query_or_source, article.url,
+                article.url_canonical, article.domain, article.title, article.author,
+                article.published_at, article.language or discovered.language,
+                article.canonical_source, article.hosting_source, article.description,
+                article.extractor_used, article.extraction_status, article.verification_level,
+                article.content_chars, article.content_sha256, article.content_markdown,
+                str(article.content_truncated).upper(), compact_json(article.metadata),
+                discovered.rank, str(is_new_source).upper(),
+                str(article.eligible_for_editor).upper(), article.reject_reason,
+                now.strftime("%Y-%m-%d %H:%M:%S"),
+                now.strftime("%Y-%m-%d %H:%M:%S"),
+                (now + timedelta(hours=self.settings.cache_hours)).strftime("%Y-%m-%d %H:%M:%S"),
+                "", "", "",
+                article.page_role, article.page_type, article.content_type,
+                article.candidate_disposition, article.special_candidate_type,
+                article.source_relationship, article.original_publisher, article.original_url,
+                article.wire_service, article.source_action, article.duplicate_type,
+                article.content_cluster_id, article.classification_confidence,
+                article.classification_version, article.classification_reason,
             ]
             if article.article_id in id_rows:
                 existing_row = id_rows[article.article_id]
                 current = ws.row_values(existing_row)
-                if len(current) >= len(ARTICLE_HEADERS):
+                if len(current) >= 33:
                     row[27] = current[27] or row[27]
-                    row[30] = current[30]
-                    row[31] = current[31]
-                    row[32] = current[32]
+                    row[30] = current[30] if len(current) > 30 else ""
+                    row[31] = current[31] if len(current) > 31 else ""
+                    row[32] = current[32] if len(current) > 32 else ""
                 updates.append((existing_row, row))
             else:
                 new_rows.append(row)
             written += 1
         if new_rows:
-            ws.append_rows(new_rows, value_input_option="USER_ENTERED", table_range="A:AG")
+            ws.append_rows(new_rows, value_input_option="USER_ENTERED", table_range="A:AV")
         for row_no, row in updates:
-            ws.update(range_name=f"A{row_no}:AG{row_no}", values=[row], value_input_option="USER_ENTERED")
+            ws.update(
+                range_name=f"A{row_no}:AV{row_no}",
+                values=[row],
+                value_input_option="USER_ENTERED",
+            )
         return written
 
     def append_extraction_logs(self, articles: Iterable[ExtractedArticle]) -> None:
@@ -173,9 +239,10 @@ class GoogleSheetStore:
             for index, attempt in enumerate(article.extraction_attempts, start=1):
                 extraction_id = f"{article.article_id}-{index}-{int(now_dt.timestamp())}"
                 rows.append([
-                    extraction_id, article.article_id, article.url, now, attempt.get("extractor", ""), index,
-                    attempt.get("http_status", ""), str(bool(attempt.get("success"))).upper(),
-                    attempt.get("body_chars", 0), str(bool(article.title)).upper(), str(bool(article.author)).upper(),
+                    extraction_id, article.article_id, article.url, now,
+                    attempt.get("extractor", ""), index, attempt.get("http_status", ""),
+                    str(bool(attempt.get("success"))).upper(), attempt.get("body_chars", 0),
+                    str(bool(article.title)).upper(), str(bool(article.author)).upper(),
                     str(bool(article.published_at)).upper(), attempt.get("error_type", ""),
                     attempt.get("error_message", ""), attempt.get("latency_ms", ""),
                     attempt.get("credits_used", ""), compact_json(attempt),
@@ -187,24 +254,40 @@ class GoogleSheetStore:
         ws = self.book.worksheet("collector_runs")
         ws.append_row([values.get(key, "") for key in RUN_HEADERS], value_input_option="USER_ENTERED")
 
+    @staticmethod
+    def _metric_value(ws: gspread.Worksheet, metric: str) -> str:
+        for row in ws.get_all_values()[1:]:
+            if row and str(row[0]).strip() == metric:
+                return str(row[1] if len(row) > 1 else "").strip()
+        return ""
+
     def maybe_auto_promote(self) -> dict[str, Any]:
-        """Promote collector_config.mode after the Sheet health gate becomes READY."""
         config_ws = self.book.worksheet("collector_config")
         rows = config_ws.get_all_records()
-        config_rows = {str(row.get("config_key", "")).strip(): (idx + 2, row) for idx, row in enumerate(rows)}
+        config_rows = {
+            str(row.get("config_key", "")).strip(): (idx + 2, row)
+            for idx, row in enumerate(rows)
+        }
         auto_row = config_rows.get("auto_promote_when_ready")
-        auto_enabled = bool(auto_row) and str(auto_row[1].get("value", "")).strip().upper() in {"TRUE", "1", "YES", "Y"}
+        auto_enabled = bool(auto_row) and str(
+            auto_row[1].get("value", "")
+        ).strip().upper() in {"TRUE", "1", "YES", "Y"}
         mode_row = config_rows.get("mode")
         current_mode = str(mode_row[1].get("value", "")).strip() if mode_row else ""
         health_ws = self.book.worksheet("collector_health")
-        promotion_gate = str(health_ws.acell("B11").value or "").strip().upper()
+        promotion_gate = self._metric_value(health_ws, "promotion_gate").upper()
         result = {
             "auto_promote_enabled": auto_enabled,
             "previous_mode": current_mode,
             "promotion_gate": promotion_gate,
             "promoted": False,
         }
-        if not auto_enabled or current_mode != "shadow" or promotion_gate != "READY" or not mode_row:
+        if (
+            not auto_enabled
+            or current_mode != "shadow"
+            or promotion_gate != "READY"
+            or not mode_row
+        ):
             return result
         row_no = mode_row[0]
         now = self._now().strftime("%Y-%m-%d %H:%M:%S")
@@ -214,7 +297,7 @@ class GoogleSheetStore:
                 "cache_primary",
                 mode_row[1].get("value_type", "string"),
                 mode_row[1].get("status", "active"),
-                "健康门达到READY后自动切换；健康门失效时日报仍自动回退原生检索",
+                "双健康门和影子验证通过后自动切换；默认仍应保持关闭",
                 now,
             ]],
             value_input_option="USER_ENTERED",
