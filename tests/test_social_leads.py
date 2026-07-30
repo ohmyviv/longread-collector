@@ -38,8 +38,8 @@ def test_short_news_agency_social_post_is_not_promoted_to_lead() -> None:
         url="https://facebook.com/kenyanewsagency/posts/example",
         title="Kenya News Agency - KNA",
         description=(
-            "AI is a useful support tool for traditional media, but human "
-            "journalists remain essential."
+            "Human journalists remain essential for deep ethical judgment, "
+            "original reporting, and public trust."
         ),
     )
     assert result.page_role == "non_content"
