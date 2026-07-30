@@ -3,12 +3,13 @@ from __future__ import annotations
 import re
 from urllib.parse import urlsplit
 
+from .classification import classify_candidate
 from .models import DiscoveredURL
 from .normalization import canonicalize_url, domain_from_url
 
-# Pages from these domains are useful as discovery signals, but not as daily
-# longread candidates. Keep the list conservative and handle broader cases by
-# URL/title/content heuristics below.
+# These domains cannot supply standalone daily candidates, but a result may be
+# retained as a discovery lead when its title/description points to credible
+# original reporting or a primary document.
 BLOCKED_DOMAIN_SUFFIXES = (
     "facebook.com",
     "instagram.com",
@@ -72,7 +73,10 @@ WHITESPACE_RE = re.compile(r"\s+")
 
 def is_blocked_domain(domain: str) -> bool:
     normalized = domain.lower().removeprefix("www.")
-    return any(normalized == suffix or normalized.endswith("." + suffix) for suffix in BLOCKED_DOMAIN_SUFFIXES)
+    return any(
+        normalized == suffix or normalized.endswith("." + suffix)
+        for suffix in BLOCKED_DOMAIN_SUFFIXES
+    )
 
 
 def _normalized_title(title: str) -> str:
@@ -80,7 +84,14 @@ def _normalized_title(title: str) -> str:
 
 
 def discovery_reject_reason(url: str, title: str = "", description: str = "") -> str:
-    """Return a machine-readable reason when a search result is clearly not an article."""
+    """Return a reason only when a search result has no candidate/lead value."""
+
+    semantic = classify_candidate(url=url, title=title, description=description)
+    if semantic.page_role == "discovery_lead":
+        return ""
+    if semantic.page_role == "non_content":
+        return semantic.reason or f"non_content:{semantic.page_type}"
+
     domain = domain_from_url(url)
     if is_blocked_domain(domain):
         return "blocked_social_or_ugc_domain"
@@ -103,15 +114,21 @@ def discovery_reject_reason(url: str, title: str = "", description: str = "") ->
         return "homepage"
 
     combined = f"{title}\n{description}".lower()
-    if any(marker in combined for marker in ("job type", "apply now", "sign in to continue", "page not found")):
+    if any(
+        marker in combined
+        for marker in ("job type", "apply now", "sign in to continue", "page not found")
+    ):
         return "non_article_search_result"
     return ""
 
 
 def markdown_prose_chars(content: str) -> int:
-    """Estimate readable prose size while discounting navigation links and image markup."""
+    """Estimate readable prose size while discounting navigation and images."""
     text = MARKDOWN_IMAGE_RE.sub(" ", content or "")
-    text = MARKDOWN_LINK_RE.sub(lambda m: re.sub(r"[\[\]()]", " ", m.group(0).split("](", 1)[0]), text)
+    text = MARKDOWN_LINK_RE.sub(
+        lambda match: re.sub(r"[\[\]() ]", " ", match.group(0).split("](", 1)[0]),
+        text,
+    )
     text = RAW_URL_RE.sub(" ", text)
     text = re.sub(r"[`*_>#|~-]", " ", text)
     return len(WHITESPACE_RE.sub("", text))
@@ -125,7 +142,9 @@ def content_quality_reason(url: str, title: str, content: str) -> tuple[bool, st
 
     title_norm = _normalized_title(title)
     prefix = (content or "")[:5000].lower()
-    if title_norm in GENERIC_OR_BLOCKED_TITLES or any(marker in prefix for marker in BLOCK_PAGE_MARKERS):
+    if title_norm in GENERIC_OR_BLOCKED_TITLES or any(
+        marker in prefix for marker in BLOCK_PAGE_MARKERS
+    ):
         return False, "blocked_login_or_captcha_page", markdown_prose_chars(content)
 
     prose_chars = markdown_prose_chars(content)
@@ -133,8 +152,10 @@ def content_quality_reason(url: str, title: str, content: str) -> tuple[bool, st
         return False, "insufficient_readable_prose", prose_chars
 
     long_paragraphs = sum(
-        1 for line in (content or "").splitlines()
-        if len(WHITESPACE_RE.sub(" ", line).strip()) >= 90 and not line.lstrip().startswith(("[", "!", "*   [", "- ["))
+        1
+        for line in (content or "").splitlines()
+        if len(WHITESPACE_RE.sub(" ", line).strip()) >= 90
+        and not line.lstrip().startswith(("[", "!", "*   [", "- ["))
     )
     links = len(MARKDOWN_LINK_RE.findall(content or ""))
     if links >= 45 and long_paragraphs < 3:
@@ -149,7 +170,7 @@ def filter_discovered(
     max_urls: int,
     max_per_domain: int = 2,
 ) -> tuple[list[DiscoveredURL], list[dict[str, str]]]:
-    """Remove obvious non-articles before spending extraction requests."""
+    """Remove non-content while preserving credible source-chase leads."""
     accepted: list[DiscoveredURL] = []
     rejected: list[dict[str, str]] = []
     seen_urls: set[str] = set()
