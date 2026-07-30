@@ -39,7 +39,7 @@ EVENT_NEWS_PATTERN = re.compile(
 )
 SOURCE_LEAD_PATTERN = re.compile(
     r"(investigation|propublica|drilled|spotlight pa|full report|read the article|"
-    r"original report|according to|foreign policy|原文|调查|报告全文|完整政策)",
+    r"original report\b|according to|foreign policy|原文|调查|报告全文|完整政策)",
     re.IGNORECASE,
 )
 SOCIAL_MEDIA_SITE_TITLE_PATTERN = re.compile(
@@ -53,6 +53,10 @@ PARTY_ACCOUNT_PATTERN = re.compile(
 POLICY_PROPOSAL_PATTERN = re.compile(
     r"(plan|policy|rules?|public interest|consent(?:ing)?|government|"
     r"data cent(?:re|er)s?|should pay|resource use|manifesto)",
+    re.IGNORECASE,
+)
+PRIMARY_DOCUMENT_TITLE_PATTERN = re.compile(
+    r"(manifesto|government\s+work\s+report|政\s*府\s*工\s*作\s*报\s*告)",
     re.IGNORECASE,
 )
 WIRE_AP_PATTERN = re.compile(
@@ -344,7 +348,7 @@ def classify_candidate(
             source_action="retain_with_source_label", reason="academic_special",
         )
 
-    primary_document = path.endswith(".pdf") or "manifesto" in title_lower or "工作报告" in title
+    primary_document = path.endswith(".pdf") or bool(PRIMARY_DOCUMENT_TITLE_PATTERN.search(title))
     if primary_document:
         year = _published_year(published_at, title)
         stale = year is not None and year < datetime.now().year - 1
