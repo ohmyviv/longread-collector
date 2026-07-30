@@ -87,10 +87,55 @@ def _update_health_metric(worksheet: object, metric: str, value: object) -> None
     raise ValueError(f"collector_health metric not found: {metric}")
 
 
+def _append_item_diagnostics(
+    worksheet: object,
+    *,
+    evaluation_id: str,
+    truth_rows: list[dict[str, object]],
+    predictions: dict[str, dict[str, object]],
+) -> list[int]:
+    rows: list[list[object]] = []
+    incorrect: list[int] = []
+    for truth in truth_rows:
+        article_id = str(truth.get("article_id", ""))
+        prediction = predictions.get(article_id, {})
+        expected = str(truth.get("disposition", ""))
+        predicted = str(prediction.get("candidate_disposition", "reject"))
+        review_index = _to_int(truth.get("review_index"))
+        correct = expected == predicted
+        if not correct:
+            incorrect.append(review_index)
+        rows.append(
+            [
+                evaluation_id,
+                review_index,
+                article_id,
+                str(truth.get("title", "")),
+                expected,
+                predicted,
+                str(truth.get("page_type", "")),
+                str(prediction.get("page_type", "")),
+                str(prediction.get("content_type", "")),
+                str(prediction.get("source_action", "")),
+                str(prediction.get("duplicate_type", "")),
+                str(prediction.get("content_cluster_id", "")),
+                str(prediction.get("classification_reason", "")),
+                str(correct).upper(),
+            ]
+        )
+    worksheet.append_rows(
+        rows,
+        value_input_option="USER_ENTERED",
+        table_range="A:N",
+    )
+    return incorrect
+
+
 def evaluate_release_ground_truth(store: object) -> dict[str, object]:
     truth_ws = store.book.worksheet("collector_ground_truth")
     cache_ws = store.book.worksheet("article_cache")
     evaluation_ws = store.book.worksheet("collector_evaluations")
+    item_ws = store.book.worksheet("collector_evaluation_items")
     health_ws = store.book.worksheet("collector_health")
     truth_rows = [
         row
@@ -108,6 +153,12 @@ def evaluate_release_ground_truth(store: object) -> dict[str, object]:
     metrics = calculate_metrics(truth_rows, predictions)
     now = store._now()
     evaluation_id = f"EVAL-{now.strftime('%Y%m%d-%H%M%S')}-BJT-v04"
+    incorrect_items = _append_item_diagnostics(
+        item_ws,
+        evaluation_id=evaluation_id,
+        truth_rows=truth_rows,
+        predictions=predictions,
+    )
     evaluation_ws.append_row(
         [
             evaluation_id,
@@ -125,7 +176,7 @@ def evaluate_release_ground_truth(store: object) -> dict[str, object]:
             metrics.source_chase_correct,
             metrics.reject_correct,
             metrics.metrics_gate,
-            "fixed fixture evaluation after batch dedupe; shadow-day gate separate",
+            f"fixed fixture evaluation after batch dedupe; incorrect={incorrect_items}; shadow-day gate separate",
         ],
         value_input_option="USER_ENTERED",
     )
@@ -143,5 +194,6 @@ def evaluate_release_ground_truth(store: object) -> dict[str, object]:
         "evaluation_id": evaluation_id,
         "collector_version": CLASSIFICATION_VERSION,
         "ground_truth_batch_id": GROUND_TRUTH_BATCH_ID,
+        "incorrect_items": incorrect_items,
         **asdict(metrics),
     }
