@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections import defaultdict
 from typing import Iterable
 
@@ -11,10 +12,19 @@ ORIGINAL_WIRE_DOMAINS = {
     "apnews.com",
     "reuters.com",
 }
+LONG_QUOTED_SEGMENT = re.compile(
+    r"(?:'[^']{10,}'|\"[^\"]{10,}\"|“[^”]{10,}”)",
+    re.IGNORECASE,
+)
+
+
+def batch_headline_fingerprint(title: str) -> str:
+    """Normalize outlet suffixes and variable quoted attribution tails."""
+    return wire_title_fingerprint(LONG_QUOTED_SEGMENT.sub(" ", title or ""))
 
 
 def headline_cluster_id(title: str) -> str:
-    fingerprint = wire_title_fingerprint(title)
+    fingerprint = batch_headline_fingerprint(title)
     digest = hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()[:12]
     return f"headline-{digest}"
 
@@ -34,7 +44,7 @@ def apply_batch_duplicate_clusters(
     for article in items:
         if article.page_type != "article":
             continue
-        fingerprint = wire_title_fingerprint(article.title)
+        fingerprint = batch_headline_fingerprint(article.title)
         if len(fingerprint.split()) < 4:
             continue
         groups[fingerprint].append(article)
