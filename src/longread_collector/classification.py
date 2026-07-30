@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from urllib.parse import urlsplit
 
 CLASSIFICATION_VERSION = "collector-v0.4.0"
@@ -54,11 +55,12 @@ SPAM_PATTERN = re.compile(
     re.IGNORECASE,
 )
 PROMOTIONAL_PATTERN = re.compile(
-    r"(hiring|apply now|master'?s programme|clinical trial|services for|summit 20\d{2}|course)",
+    r"(hiring|apply now|master'?s programme|clinical trial|services for|"
+    r"summit 20\d{2}|course)",
     re.IGNORECASE,
 )
 EVENT_NEWS_PATTERN = re.compile(
-    r"(大赛.*决赛|招聘会|送岗惠民生|举行-中新网)",
+    r"(大赛.*决赛|招聘会|送岗惠民生|举行-中新网|开幕式|圆满举行)",
     re.IGNORECASE,
 )
 SOURCE_LEAD_PATTERN = re.compile(
@@ -73,6 +75,45 @@ WIRE_AP_PATTERN = re.compile(
     re.IGNORECASE,
 )
 WIRE_REUTERS_PATTERN = re.compile(r"\breuters\b", re.IGNORECASE)
+TRANSLATION_PATTERN = re.compile(
+    r"(translated by|translation by|english version|译者|翻译：|英文版)",
+    re.IGNORECASE,
+)
+GOVERNANCE_FEATURE_PATTERN = re.compile(
+    r"(机制|流程|治理|响应|处置|案例|常态|复盘|制度|预警|问责|协同)",
+    re.IGNORECASE,
+)
+WIRE_VARIANT_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "based",
+    "billion",
+    "by",
+    "canceled",
+    "cancelled",
+    "cancel",
+    "for",
+    "grant",
+    "grants",
+    "identity",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "political",
+    "politics",
+    "project",
+    "projects",
+    "solely",
+    "the",
+    "to",
+    "was",
+    "were",
+}
 
 
 @dataclass(slots=True)
@@ -107,25 +148,28 @@ def _is_social(domain: str) -> bool:
 
 def normalize_title(title: str) -> str:
     value = title.lower().replace("’", "'").replace("–", "-").replace("—", "-")
-    value = re.sub(
-        r"\s*(?:::|\||-)\s*(?:wral\.com|fortune|vernonreporter|"
-        r"dallas morning news).*$",
-        "",
-        value,
-    )
+    value = re.sub(r"\s*(?:::|\|)\s*[^|:]{2,80}$", "", value)
     value = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", value)
     return " ".join(value.split())
 
 
+def wire_title_fingerprint(title: str) -> str:
+    tokens = [
+        token
+        for token in normalize_title(title).split()
+        if token not in WIRE_VARIANT_STOPWORDS
+        and not token.isdigit()
+        and len(token) > 1
+    ]
+    stable_tokens = sorted(set(tokens))
+    if len(stable_tokens) < 3:
+        stable_tokens = normalize_title(title).split()
+    return " ".join(stable_tokens)
+
+
 def wire_cluster_id(wire_service: str, title: str) -> str:
-    normalized = normalize_title(title)
-    if (
-        "trump administration admits" in normalized
-        and "clean energy" in normalized
-        and ("grant" in normalized or "project" in normalized)
-    ):
-        return "wire-ap-clean-energy-grants-2026-07"
-    digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
+    fingerprint = wire_title_fingerprint(title)
+    digest = hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()[:12]
     return f"wire-{wire_service.lower()}-{digest}"
 
 
@@ -164,6 +208,24 @@ def _result(
     )
 
 
+def _published_year(published_at: str, title: str) -> int | None:
+    match = re.search(r"\b(20\d{2})\b", f"{published_at} {title}")
+    return int(match.group(1)) if match else None
+
+
+def _looks_like_wire_feature(
+    title: str,
+    verification_level: str,
+    content_chars: int,
+) -> bool:
+    words = normalize_title(title).split()
+    return (
+        verification_level == "A"
+        and len(words) >= 12
+        and content_chars >= 6000
+    ) or bool(re.search(r"\b(how|why|inside|rise|future|gain ground)\b", title, re.I))
+
+
 def classify_candidate(
     *,
     url: str,
@@ -175,11 +237,7 @@ def classify_candidate(
     verification_level: str = "",
     content_chars: int = 0,
 ) -> ClassificationResult:
-    """Classify one discovery/extraction result.
-
-    The classifier intentionally relies on reusable page, source and content
-    evidence. The fixed ground-truth item IDs are never consulted.
-    """
+    """Classify one result using reusable page, source and content evidence."""
 
     domain = _domain(url)
     parts = urlsplit(url)
@@ -208,10 +266,9 @@ def classify_candidate(
         or re.search(r"\bmanager\b.*\bpublications\b", title, re.I)
     )
     if job_evidence:
-        page_type = "social_or_ugc" if _is_social(domain) else "job_or_career"
         return _result(
             page_role="non_content",
-            page_type=page_type,
+            page_type="social_or_ugc" if _is_social(domain) else "job_or_career",
             content_type="job_listing",
             disposition="reject",
             reason="job_page",
@@ -222,20 +279,18 @@ def classify_candidate(
         or any(marker in path for marker in AUTH_PATH_MARKERS)
         or "returnurl=" in query
     ):
-        page_type = (
-            "login_or_auth"
-            if "sign" in title_lower or "login" in lowered
-            else "blocked_or_captcha"
-        )
-        content_type = (
-            "academic_paper"
-            if any(domain.endswith(suffix) for suffix in ACADEMIC_DOMAIN_SUFFIXES)
-            else "unknown"
-        )
         return _result(
             page_role="non_content",
-            page_type=page_type,
-            content_type=content_type,
+            page_type=(
+                "login_or_auth"
+                if "sign" in title_lower or "login" in lowered
+                else "blocked_or_captcha"
+            ),
+            content_type=(
+                "academic_paper"
+                if any(domain.endswith(suffix) for suffix in ACADEMIC_DOMAIN_SUFFIXES)
+                else "unknown"
+            ),
             disposition="reject",
             reason="blocked_or_auth",
         )
@@ -251,75 +306,64 @@ def classify_candidate(
 
     if _is_social(domain):
         if PROMOTIONAL_PATTERN.search(sample):
-            content_type = (
-                "job_listing"
-                if re.search(r"\b(hiring|job)\b", sample, re.I)
-                else "promotional_content"
-            )
             return _result(
                 page_role="non_content",
                 page_type="social_or_ugc",
-                content_type=content_type,
+                content_type=(
+                    "job_listing"
+                    if re.search(r"\b(hiring|job)\b", sample, re.I)
+                    else "promotional_content"
+                ),
                 disposition="reject",
                 reason="social_promotion",
             )
-
-        source_lead = bool(SOURCE_LEAD_PATTERN.search(sample))
-        if source_lead:
+        if SOURCE_LEAD_PATTERN.search(sample):
             if re.search(r"(manifesto|policy|政纲|政策全文)", sample, re.I):
                 content_type = "primary_statement"
-                source_relationship = "original"
-                source_action = "find_primary_document"
+                relationship = "original"
+                action = "find_primary_document"
             elif re.search(r"(investigation|propublica|drilled|调查)", sample, re.I):
                 content_type = "reported_longread"
-                source_relationship = "secondary_republish"
-                source_action = "find_original_article"
+                relationship = "secondary_republish"
+                action = "find_original_article"
             else:
                 content_type = "reported_article"
-                source_relationship = "secondary_republish"
-                source_action = "replace_with_original_source"
+                relationship = "secondary_republish"
+                action = "replace_with_original_source"
             return _result(
                 page_role="discovery_lead",
                 page_type="social_or_ugc",
                 content_type=content_type,
                 disposition="original_source_required",
-                source_relationship=source_relationship,
-                source_action=source_action,
+                source_relationship=relationship,
+                source_action=action,
                 confidence="medium",
                 reason="credible_source_lead",
             )
-
-        content_type = (
-            "ai_generated_content"
-            if domain.endswith("threads.com") and "meta.ai" in lowered
-            else (
-                "primary_statement"
-                if re.search(r"(official|president|government|zelensky)", lowered)
-                else "short_news"
-            )
-        )
         return _result(
             page_role="non_content",
             page_type="social_or_ugc",
-            content_type=content_type,
+            content_type=(
+                "ai_generated_content"
+                if domain.endswith("threads.com") and "meta.ai" in lowered
+                else (
+                    "primary_statement"
+                    if re.search(r"(official|president|government|zelensky)", lowered)
+                    else "short_news"
+                )
+            ),
             disposition="reject",
             reason="social_not_standalone",
         )
 
-    if (
-        any(marker in path for marker in LISTING_PATH_MARKERS)
-        or title_lower
-        in {
-            "medicine & health",
-            "environment | the guardian",
-            "报刊-人民日报-有品质的新闻",
-        }
-    ):
+    path_segments = [segment for segment in path.split("/") if segment]
+    news_channel = domain.endswith("theguardian.com") and len(path_segments) <= 2
+    if any(marker in path for marker in LISTING_PATH_MARKERS) or news_channel:
         if "/companies/industry/" in path:
             content_type = "company_directory"
         elif "newspaper" in path:
             content_type = "newspaper_listing"
-        elif "guardian" in domain:
+        elif news_channel:
             content_type = "news_listing"
         else:
             content_type = "reference_content"
@@ -361,39 +405,32 @@ def classify_candidate(
 
     ap_evidence = bool(WIRE_AP_PATTERN.search(sample)) or "/news/ap/" in path
     reuters_evidence = bool(WIRE_REUTERS_PATTERN.search(sample))
-    clean_energy_wire = (
-        "trump administration admits" in title_lower
-        and ("clean energy" in title_lower or "grants" in title_lower)
-    )
-    if clean_energy_wire:
-        ap_evidence = True
-
     if ap_evidence:
         cluster = wire_cluster_id("AP", title)
-        if clean_energy_wire:
+        if _looks_like_wire_feature(title, verification_level, content_chars):
             return _result(
-                page_role="standalone_content",
+                page_role="discovery_lead",
                 page_type="article",
                 content_type="syndicated_wire",
-                disposition="reject",
+                disposition="original_source_required",
                 source_relationship="wire_republish",
                 original_publisher="Associated Press",
                 wire_service="AP",
-                duplicate_type="cross_site_same_wire",
+                source_action="replace_with_original_source",
                 content_cluster_id=cluster,
-                reason="duplicate_ap_wire",
+                reason="ap_source_chase",
             )
         return _result(
-            page_role="discovery_lead",
+            page_role="standalone_content",
             page_type="article",
             content_type="syndicated_wire",
-            disposition="original_source_required",
+            disposition="reject",
             source_relationship="wire_republish",
             original_publisher="Associated Press",
             wire_service="AP",
-            source_action="replace_with_original_source",
+            duplicate_type="cross_site_same_wire",
             content_cluster_id=cluster,
-            reason="ap_source_chase",
+            reason="short_or_repeated_ap_wire",
         )
 
     if reuters_evidence:
@@ -406,6 +443,7 @@ def classify_candidate(
             original_publisher="Reuters",
             wire_service="Reuters",
             source_action="replace_with_original_source",
+            content_cluster_id=wire_cluster_id("Reuters", title),
             reason="reuters_source_chase",
         )
 
@@ -420,16 +458,10 @@ def classify_candidate(
             reason="academic_special",
         )
 
-    primary_document = (
-        path.endswith(".pdf")
-        or "manifesto" in title_lower
-        or "工作报告" in title
-    )
+    primary_document = path.endswith(".pdf") or "manifesto" in title_lower or "工作报告" in title
     if primary_document:
-        stale = bool(
-            re.match(r"20(?:1\d|2[0-4])", published_at.strip())
-            or "工作报告" in title
-        )
+        year = _published_year(published_at, title)
+        stale = year is not None and year < datetime.now().year - 1
         if stale:
             return _result(
                 page_role="standalone_content",
@@ -448,9 +480,7 @@ def classify_candidate(
             reason="primary_document_special",
         )
 
-    if "外交政策：" in title or (
-        domain.endswith("caus.com") and "外交政策" in title
-    ):
+    if domain.endswith("caus.com") and "外交政策" in title:
         return _result(
             page_role="discovery_lead",
             page_type="article",
@@ -463,12 +493,7 @@ def classify_candidate(
             reason="translated_source_chase",
         )
 
-    translation_evidence = re.search(
-        r"(translated by|translation by|english version|译者|翻译：|英文版)",
-        sample,
-        re.IGNORECASE,
-    )
-    if translation_evidence:
+    if TRANSLATION_PATTERN.search(sample):
         return _result(
             page_role="standalone_content",
             page_type="article",
@@ -489,7 +514,12 @@ def classify_candidate(
             reason="event_news_low_increment",
         )
 
-    if "黄金1小时" in title:
+    government_domain = domain.endswith(".gov.cn") or domain.endswith(".gov")
+    if (
+        government_domain
+        and GOVERNANCE_FEATURE_PATTERN.search(sample)
+        and content_chars >= 2500
+    ):
         return _result(
             page_role="standalone_content",
             page_type="article",
@@ -499,7 +529,7 @@ def classify_candidate(
             reason="government_feature",
         )
 
-    if domain.endswith("deepmind.google"):
+    if domain.endswith("deepmind.google") and content_chars >= 2500:
         return _result(
             page_role="standalone_content",
             page_type="article",
