@@ -35,13 +35,16 @@ jobs:
               'https://knowablemagazine.org/rss.xml',
               'https://www.knowablemagazine.org/rss',
               'https://www.deeptechchina.com/',
-              'https://www.deeptechchina.com/sitemap.xml',
-              'https://www.deeptechchina.com/feed',
+              'https://www.mittrchina.com/',
+              'https://www.mittrchina.com/news',
               'https://r.jina.ai/http://www.deeptechchina.com/',
+              'https://r.jina.ai/http://www.mittrchina.com/news',
               'https://insideclimatenews.org/feed/',
-              'https://insideclimatenews.org/News/',
+              'https://insideclimatenews.org/news/',
               'https://insideclimatenews.org/wp-json/wp/v2/posts?per_page=10',
-              'https://r.jina.ai/http://insideclimatenews.org/News/',
+              'https://r.jina.ai/http://insideclimatenews.org/news/',
+              'https://www.bing.com/news/search?q=site%3Ainsideclimatenews.org&format=rss',
+              'https://news.google.com/rss/search?q=site%3Ainsideclimatenews.org&hl=en-US&gl=US&ceid=US%3Aen',
           ]
           headers = {
               'User-Agent': 'Mozilla/5.0 (compatible; LongreadCollector/0.5; +https://github.com/ohmyviv/longread-collector)',
@@ -61,6 +64,7 @@ jobs:
                           'chars': len(text),
                           'html_hrefs': len(re.findall(r'href=["\']([^"\']+)', text, re.I)),
                           'markdown_links': len(re.findall(r'\[[^\]]{2,200}\]\((https?://[^)]+)\)', text)),
+                          'rss_items': len(re.findall(r'<item\b', text, re.I)),
                           'article_urls': len(set(re.findall(r'https?://[^\s"\')<>]+(?:article|news|story|content|detail|20\d{2})[^\s"\')<>]*', text, re.I))),
                           'sample': re.sub(r'\s+', ' ', text[:1200]),
                       })
