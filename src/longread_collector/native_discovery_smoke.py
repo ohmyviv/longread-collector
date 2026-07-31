@@ -4,13 +4,15 @@ import argparse
 import asyncio
 import json
 from collections import Counter
-from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from .config import get_settings
-from .native_discovery import NativeSourceDiscovery, select_sources_for_run
+from .known_source_fixes import (
+    KnownFallbackAwareDiscovery as NativeSourceDiscovery,
+    select_sources_for_run,
+)
 from .sheets import GoogleSheetStore
 
 SMOKE_HEADERS = [
