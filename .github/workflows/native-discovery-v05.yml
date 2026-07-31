@@ -8,12 +8,15 @@ on:
       - 'src/longread_collector/native_discovery_smoke.py'
       - 'src/longread_collector/known_source_fixes.py'
       - 'src/longread_collector/known_source_fixes_smoke.py'
+      - 'src/longread_collector/operational_hotfix.py'
       - 'src/longread_collector/pipeline_v05.py'
       - 'src/longread_collector/pipeline_v051.py'
       - 'src/longread_collector/runtime_config.py'
       - 'src/longread_collector/cli.py'
+      - 'requirements.txt'
       - 'tests/test_native_discovery_v05.py'
       - 'tests/test_known_source_fixes.py'
+      - 'tests/test_operational_hotfix_v053.py'
       - '.github/workflows/native-discovery-v05.yml'
 
 permissions:
@@ -35,6 +38,7 @@ jobs:
           pytest -q \
             tests/test_native_discovery_v05.py \
             tests/test_known_source_fixes.py \
+            tests/test_operational_hotfix_v053.py \
             tests/test_source_registry_v1.py
       - name: Prepare Google credentials
         env:
