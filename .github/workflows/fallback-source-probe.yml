@@ -6,6 +6,9 @@ on:
       - agent/fix-known-fallback-sources
     paths:
       - '.github/workflows/fallback-source-probe.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/fallback-source-probe.yml'
   workflow_dispatch:
 
 permissions:
