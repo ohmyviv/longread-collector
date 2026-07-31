@@ -6,10 +6,14 @@ on:
     paths:
       - 'src/longread_collector/native_discovery.py'
       - 'src/longread_collector/native_discovery_smoke.py'
+      - 'src/longread_collector/known_source_fixes.py'
+      - 'src/longread_collector/known_source_fixes_smoke.py'
       - 'src/longread_collector/pipeline_v05.py'
+      - 'src/longread_collector/pipeline_v051.py'
       - 'src/longread_collector/runtime_config.py'
       - 'src/longread_collector/cli.py'
       - 'tests/test_native_discovery_v05.py'
+      - 'tests/test_known_source_fixes.py'
       - '.github/workflows/native-discovery-v05.yml'
 
 permissions:
@@ -27,7 +31,11 @@ jobs:
           cache: pip
       - run: pip install . pytest
       - name: Native discovery regression tests
-        run: pytest -q tests/test_native_discovery_v05.py tests/test_source_registry_v1.py
+        run: |
+          pytest -q \
+            tests/test_native_discovery_v05.py \
+            tests/test_known_source_fixes.py \
+            tests/test_source_registry_v1.py
       - name: Prepare Google credentials
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON_B64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_B64 }}
@@ -51,6 +59,16 @@ jobs:
             --concurrency 12 \
             --minimum-success-rate 0.40 \
             --output-json artifacts/native-discovery-smoke.json
+      - name: Four-source repair smoke
+        env:
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          GOOGLE_SHEET_ID: 1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4
+          GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
+          TIMEZONE: Asia/Shanghai
+        run: |
+          python -m longread_collector.known_source_fixes_smoke \
+            --output-json artifacts/known-source-fixes-smoke.json
       - name: Upload native discovery evidence
         if: always()
         uses: actions/upload-artifact@v4
