@@ -12,7 +12,7 @@ from .clients import FirecrawlClient, JinaReaderClient
 from .config import get_settings
 from .extraction import extract_article
 from .models import DiscoveredURL
-from .pipeline_v05 import NativeCollectorPipeline as CollectorPipeline
+from .pipeline_v051 import NativeCollectorPipeline as CollectorPipeline
 from .release_evaluation import evaluate_release_ground_truth
 from .sheets import GoogleSheetStore
 
