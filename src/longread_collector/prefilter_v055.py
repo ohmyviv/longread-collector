@@ -85,15 +85,6 @@ def discovery_hard_gate_reason(item: DiscoveredURL) -> str:
         and "/articles/" not in path
     ):
         return "listing_page"
-    if domain.endswith("occrp.org") and title in {
-        "Bad Practice",
-        "OCCRP Under Attack",
-        "Scam Empire",
-        "Venezuela",
-        "Ukraine",
-        "Russia",
-    }:
-        return "investigation_project_page"
 
     if _CORRECTION_RE.search(title):
         return "correction_notice"
