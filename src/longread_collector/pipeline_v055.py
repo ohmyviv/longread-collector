@@ -8,12 +8,21 @@ from pathlib import Path
 from typing import Any
 
 from . import classification as _classification
+from . import operational_hotfix as _operational_hotfix
 from . import quality as _quality
 from .classification_v055 import CLASSIFICATION_VERSION, classify_candidate_v055
 
 _classification.CLASSIFICATION_VERSION = CLASSIFICATION_VERSION
 _classification.classify_candidate = classify_candidate_v055
 _quality.classify_candidate = classify_candidate_v055
+_operational_hotfix._DEFAULT_SCHEDULES.update(
+    {
+        "intl_early": "22:30",
+        "pre_report": "04:00",
+        "zh_midday": "11:50",
+        "zh_evening": "17:50",
+    }
+)
 
 from . import pipeline_v05 as _pipeline_v05  # noqa: E402
 from .ranked_selection_v055 import (  # noqa: E402
