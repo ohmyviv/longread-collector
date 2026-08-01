@@ -1,0 +1,79 @@
+name: Editorial recall hotfix v0.5.5
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/longread_collector/classification_v055.py'
+      - 'src/longread_collector/ranked_selection_v055.py'
+      - 'src/longread_collector/source_chase_v055.py'
+      - 'src/longread_collector/pipeline_v055.py'
+      - 'src/longread_collector/pipeline_v054.py'
+      - 'tests/test_editorial_hotfix_v055.py'
+      - '.github/workflows/editorial-hotfix-v055.yml'
+      - '.github/workflows/collector.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-editorial-hotfix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install . pytest
+      - name: Full collector regression suite
+        run: pytest -q
+      - name: Prepare Google credentials
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON_B64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_B64 }}
+        run: |
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON_B64"
+          echo "$GOOGLE_SERVICE_ACCOUNT_JSON_B64" | base64 -d > /tmp/google-service-account.json
+          chmod 600 /tmp/google-service-account.json
+      - name: Doctor against production Sheet
+        env:
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          GOOGLE_SHEET_ID: 1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4
+          GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
+          TIMEZONE: Asia/Shanghai
+        run: longread-collector doctor
+      - name: Live 24-source native discovery smoke
+        env:
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          GOOGLE_SHEET_ID: 1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4
+          GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
+          TIMEZONE: Asia/Shanghai
+        run: |
+          python -m longread_collector.native_discovery_smoke \
+            --max-sources-per-language 12 \
+            --limit-per-source 6 \
+            --freshness-days 3 \
+            --timeout 15 \
+            --concurrency 12 \
+            --minimum-success-rate 0.40 \
+            --output-json artifacts/native-discovery-smoke-v055.json
+      - name: Four-source repair smoke
+        env:
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          GOOGLE_SHEET_ID: 1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4
+          GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
+          TIMEZONE: Asia/Shanghai
+        run: |
+          python -m longread_collector.known_source_fixes_smoke \
+            --output-json artifacts/known-source-fixes-smoke-v055.json
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: editorial-hotfix-v055
+          path: artifacts/
+          if-no-files-found: warn
