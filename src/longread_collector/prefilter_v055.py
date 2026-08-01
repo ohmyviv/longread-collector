@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from urllib.parse import urlsplit
 
 from .models import DiscoveredURL
-from .ranked_selection_v055 import filter_discovered as _ranked_filter_discovered
+from .normalization import canonicalize_url, domain_from_url
+from .ranked_selection_v055 import (
+    ABSOLUTE_HOST_CAP,
+    NATIVE_SOURCE_CAP,
+    OPEN_DOMAIN_CAP,
+    filter_discovered as _ranked_filter_discovered,
+)
 
 PREFILTER_VERSION = "deterministic-prefilter-v0.5.5"
 
@@ -51,6 +58,7 @@ _LAWFARE_CHANNEL_TITLES = {
     "cybersecurity & tech",
     "democracy & elections",
 }
+_BACKFILL_REASONS = {"native_bucket_capacity", "open_bucket_capacity"}
 
 
 def _domain_and_path(url: str) -> tuple[str, str]:
@@ -112,6 +120,69 @@ def discovery_hard_gate_reason(item: DiscoveredURL) -> str:
     return ""
 
 
+def _score_key(item: DiscoveredURL) -> tuple[int, int, int, int, int, int, int, int]:
+    selection = item.metadata.get("selection", {})
+    components = selection.get("score_components", {})
+    bucket_priority = 1 if selection.get("selection_bucket") == "native" else 0
+    return (
+        bucket_priority,
+        int(components.get("quality", 0)),
+        int(components.get("article_confidence", 0)),
+        int(components.get("depth", 0)),
+        int(components.get("freshness_ordinal", 0)),
+        int(components.get("title_richness", 0)),
+        int(components.get("description_richness", 0)),
+        int(components.get("rank_score", 0)),
+    )
+
+
+def _backfill_unused_capacity(
+    accepted: list[DiscoveredURL],
+    candidates: list[DiscoveredURL],
+    *,
+    max_urls: int,
+) -> list[DiscoveredURL]:
+    if len(accepted) >= max_urls:
+        return accepted
+
+    selected_urls = {canonicalize_url(item.url) for item in accepted}
+    group_counts: Counter[str] = Counter()
+    host_counts: Counter[str] = Counter()
+    for item in accepted:
+        selection = item.metadata.get("selection", {})
+        group_counts[str(selection.get("selection_group", ""))] += 1
+        host_counts[domain_from_url(item.url)] += 1
+
+    remaining = []
+    for item in candidates:
+        if canonicalize_url(item.url) in selected_urls:
+            continue
+        selection = item.metadata.get("selection", {})
+        if selection.get("capacity_bucket_reject_reason") not in _BACKFILL_REASONS:
+            continue
+        remaining.append(item)
+    remaining.sort(key=_score_key, reverse=True)
+
+    for item in remaining:
+        if len(accepted) >= max_urls:
+            break
+        selection = item.metadata.get("selection", {})
+        bucket = str(selection.get("selection_bucket", "open"))
+        group = str(selection.get("selection_group", ""))
+        host = domain_from_url(item.url)
+        group_cap = NATIVE_SOURCE_CAP if bucket == "native" else OPEN_DOMAIN_CAP
+        if group_counts[group] >= group_cap or host_counts[host] >= ABSOLUTE_HOST_CAP:
+            continue
+        selection.pop("capacity_bucket_reject_reason", None)
+        selection["selected_order"] = len(accepted) + 1
+        selection["capacity_backfill"] = True
+        accepted.append(item)
+        selected_urls.add(canonicalize_url(item.url))
+        group_counts[group] += 1
+        host_counts[host] += 1
+    return accepted
+
+
 def filter_discovered(
     discovered: list[DiscoveredURL],
     *,
@@ -138,6 +209,11 @@ def filter_discovered(
         candidates,
         max_urls=max_urls,
         max_per_domain=max_per_domain,
+    )
+    accepted = _backfill_unused_capacity(
+        accepted,
+        candidates,
+        max_urls=max_urls,
     )
     return accepted, hard_rejected + ranked_rejected
 

@@ -23,6 +23,38 @@ def _item(url: str, title: str, description: str = "") -> DiscoveredURL:
     )
 
 
+def _native(source_id: str, article_index: int) -> DiscoveredURL:
+    return DiscoveredURL(
+        url=f"https://{source_id}.example.com/2026/08/01/article-{article_index}.html",
+        title=f"Investigation feature {source_id} {article_index}",
+        description="A detailed reported article with evidence and analysis.",
+        published_at="2026-08-01",
+        rank=article_index,
+        discovery_method="rss",
+        query_or_source=f"source:{source_id}",
+        metadata={
+            "purpose": "native_source_scan",
+            "source_id": source_id,
+            "source_name": source_id,
+        },
+    )
+
+
+def _open(domain_index: int, article_index: int) -> DiscoveredURL:
+    return DiscoveredURL(
+        url=(
+            f"https://open{domain_index}.example.org/2026/08/01/"
+            f"analysis-{article_index}.html"
+        ),
+        title=f"Open analysis {domain_index} {article_index}",
+        description="An independent analysis article with sufficient metadata.",
+        published_at="2026-08-01",
+        rank=article_index,
+        discovery_method="firecrawl_search",
+        query_or_source="en_ai_fresh",
+    )
+
+
 def test_known_non_articles_are_rejected_before_extraction() -> None:
     cen = _item("https://cen.acs.org/explore/features.html", "Features")
     correction = _item(
@@ -96,3 +128,41 @@ def test_source_chase_leads_are_not_discarded_by_prefilter() -> None:
         takeaways.url,
     }
     assert rejected == []
+
+
+def test_unused_capacity_backfills_third_and_fourth_native_articles() -> None:
+    discovered = [
+        _native(source_id, article_index)
+        for source_id in ("native0", "native1", "native2", "native3")
+        for article_index in range(1, 5)
+    ]
+    discovered.extend(
+        _open(domain_index, article_index)
+        for domain_index in range(10)
+        for article_index in range(1, 3)
+    )
+
+    accepted, _ = filter_discovered(
+        discovered,
+        max_urls=32,
+        max_per_domain=2,
+    )
+    native = [
+        item for item in accepted
+        if item.metadata.get("purpose") == "native_source_scan"
+    ]
+    open_items = [
+        item for item in accepted
+        if item.metadata.get("purpose") != "native_source_scan"
+    ]
+
+    assert len(accepted) == 32
+    assert len(native) == 16
+    assert len(open_items) == 16
+    assert sum(
+        bool(item.metadata["selection"].get("capacity_backfill"))
+        for item in native
+    ) == 8
+    assert sorted(
+        item.metadata["selection"]["selected_order"] for item in accepted
+    ) == list(range(1, 33))
