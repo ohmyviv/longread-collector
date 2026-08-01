@@ -18,7 +18,7 @@ _quality.classify_candidate = classify_candidate_v055
 _operational_hotfix._DEFAULT_SCHEDULES.update(
     {
         "intl_early": "22:30",
-        "pre_report": "04:00",
+        "pre_report": "03:57",
         "zh_midday": "11:50",
         "zh_evening": "17:50",
     }

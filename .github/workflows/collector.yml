@@ -19,7 +19,7 @@ on:
     # GitHub Actions schedule latency before the 07:35 editorial report.
     - cron: '30 22 * * *'
       timezone: 'Asia/Shanghai'
-    - cron: '0 4 * * *'
+    - cron: '57 3 * * *'
       timezone: 'Asia/Shanghai'
     - cron: '50 11 * * *'
       timezone: 'Asia/Shanghai'
@@ -59,7 +59,7 @@ jobs:
           else
             case "$CRON_EXPR" in
               '30 22 * * *') GROUP='intl_early' ;;
-              '0 4 * * *')   GROUP='pre_report' ;;
+              '57 3 * * *')  GROUP='pre_report' ;;
               '50 11 * * *') GROUP='zh_midday' ;;
               '50 17 * * *') GROUP='zh_evening' ;;
               *) echo "Unknown schedule: $CRON_EXPR" >&2; exit 2 ;;
