@@ -15,10 +15,11 @@ on:
           - zh_midday
           - zh_evening
   schedule:
-    # Beijing time. The 23:20 and 05:20 runs feed the next 07:35 report directly.
-    - cron: '20 23 * * *'
+    # Beijing time. Deadline-sensitive runs are advanced to absorb observed
+    # GitHub Actions schedule latency before the 07:35 editorial report.
+    - cron: '30 22 * * *'
       timezone: 'Asia/Shanghai'
-    - cron: '20 5 * * *'
+    - cron: '0 4 * * *'
       timezone: 'Asia/Shanghai'
     - cron: '50 11 * * *'
       timezone: 'Asia/Shanghai'
@@ -57,8 +58,8 @@ jobs:
             GROUP="$MANUAL_GROUP"
           else
             case "$CRON_EXPR" in
-              '20 23 * * *') GROUP='intl_early' ;;
-              '20 5 * * *')  GROUP='pre_report' ;;
+              '30 22 * * *') GROUP='intl_early' ;;
+              '0 4 * * *')   GROUP='pre_report' ;;
               '50 11 * * *') GROUP='zh_midday' ;;
               '50 17 * * *') GROUP='zh_evening' ;;
               *) echo "Unknown schedule: $CRON_EXPR" >&2; exit 2 ;;
