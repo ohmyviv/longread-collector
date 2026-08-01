@@ -25,6 +25,7 @@ _operational_hotfix._DEFAULT_SCHEDULES.update(
 )
 
 from . import pipeline_v05 as _pipeline_v05  # noqa: E402
+from .prefilter_v055 import PREFILTER_VERSION, filter_discovered  # noqa: E402
 from .ranked_selection_v055 import (  # noqa: E402
     ABSOLUTE_HOST_CAP,
     NATIVE_BUCKET_TARGET,
@@ -32,7 +33,6 @@ from .ranked_selection_v055 import (  # noqa: E402
     OPEN_BUCKET_TARGET,
     OPEN_DOMAIN_CAP,
     SELECTION_VERSION,
-    filter_discovered,
 )
 from .source_chase_v055 import build_source_chase_queries_v055  # noqa: E402
 
@@ -59,6 +59,7 @@ _FALLBACK_LIMIT: ContextVar[_FallbackLimitContext | None] = ContextVar(
 _ORIGINAL_PIPELINE_EXTRACT = _pipeline.extract_article
 _ORIGINAL_APPEND_COLLECTOR_RUN = GoogleSheetStore.append_collector_run
 _SELECTION_MARKER = (
+    f"prefilter_version={PREFILTER_VERSION}; "
     f"selection_version={SELECTION_VERSION}; "
     f"native_bucket_target={NATIVE_BUCKET_TARGET}; "
     f"open_bucket_target={OPEN_BUCKET_TARGET}; "
@@ -153,6 +154,7 @@ class NativeCollectorPipeline(_BasePipeline):
         token = _FALLBACK_LIMIT.set(limit_context)
         try:
             result = await super().collect(group_id=group_id, query_file=query_file)
+            result["prefilter_version"] = PREFILTER_VERSION
             result["selection_version"] = SELECTION_VERSION
             result["classification_version"] = CLASSIFICATION_VERSION
             result["source_chase_version"] = "deterministic-v0.5.5"
