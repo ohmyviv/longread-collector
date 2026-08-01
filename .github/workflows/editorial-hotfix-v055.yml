@@ -9,6 +9,7 @@ on:
       - 'src/longread_collector/source_chase_v055.py'
       - 'src/longread_collector/pipeline_v055.py'
       - 'src/longread_collector/pipeline_v054.py'
+      - 'src/longread_collector/known_source_fixes_smoke.py'
       - 'tests/test_editorial_hotfix_v055.py'
       - '.github/workflows/editorial-hotfix-v055.yml'
       - '.github/workflows/collector.yml'
@@ -60,7 +61,7 @@ jobs:
             --concurrency 12 \
             --minimum-success-rate 0.40 \
             --output-json artifacts/native-discovery-smoke-v055.json
-      - name: Four-source repair smoke
+      - name: Four-source route-health smoke
         env:
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
           JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
