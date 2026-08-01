@@ -72,3 +72,27 @@ def test_real_feature_keeps_capacity_when_roundup_is_removed() -> None:
     )
     assert [item.url for item in accepted] == [feature.url]
     assert rejected == [{"url": roundup.url, "reason": "news_roundup"}]
+
+
+def test_source_chase_leads_are_not_discarded_by_prefilter() -> None:
+    occrp_project = _item(
+        "https://www.occrp.org/en/project/bad-practice",
+        "Bad Practice",
+        "An OCCRP investigation project containing individual reports.",
+    )
+    takeaways = _item(
+        "https://www.nytimes.com/2026/07/31/magazine/takeaways-ai.html",
+        "Five Takeaways From the Times Investigation Into Larry Ellison's A.I. Gamble",
+    )
+
+    assert discovery_hard_gate_reason(occrp_project) == ""
+    assert discovery_hard_gate_reason(takeaways) == ""
+
+    accepted, rejected = filter_discovered(
+        [occrp_project, takeaways], max_urls=2, max_per_domain=2
+    )
+    assert {item.url for item in accepted} == {
+        occrp_project.url,
+        takeaways.url,
+    }
+    assert rejected == []
