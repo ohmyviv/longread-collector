@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from . import ranked_freshness_v056 as _ranked_freshness
 from .models import DiscoveredURL
-from .ranked_selection_v056c import (
+from .ranked_selection_v056 import (
     OPEN_DOMAIN_CAP,
     filter_discovered as _ranked_filter_discovered,
 )
 from .selection_plan_v056 import publish_selection_plan
+
+# Install the resolved-publication score adapter while preserving the validated
+# PR-B reserve allocator.
+_ranked_freshness.install_ranked_freshness()
 
 
 def filter_discovered(
