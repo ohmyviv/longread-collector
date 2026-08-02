@@ -17,10 +17,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: production-sheet-smoke-${{ github.repository }}
-  cancel-in-progress: false
-
 jobs:
   validate-editorial-hotfix:
     runs-on: ubuntu-latest
@@ -81,8 +77,8 @@ jobs:
             if [ "$attempt" -eq 3 ]; then
               exit 1
             fi
-            echo "Sheet-backed smoke failed; waiting for API quota window (attempt $attempt/3)."
-            sleep 70
+            echo "Sheet-backed smoke failed; using staggered quota backoff (attempt $attempt/3)."
+            sleep 95
           done
       - name: Upload validation evidence
         if: always()
