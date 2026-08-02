@@ -19,7 +19,7 @@ from .ranked_selection_v056 import (
     OPEN_DOMAIN_CAP,
 )
 
-INITIAL_SELECTION_MIN_EDITORIAL_PRIORITY = 46
+INITIAL_SELECTION_MIN_EDITORIAL_PRIORITY = 49
 _BACKFILL_STATUSES = {
     "bucket_capacity_reserve",
     "source_initial_cap_reserve",
@@ -67,6 +67,10 @@ def _group_cap(item: DiscoveredURL) -> int:
     )
 
 
+def _unique_candidate_count(items: list[DiscoveredURL]) -> int:
+    return len({canonicalize_url(item.url) for item in items})
+
+
 def apply_initial_selection_threshold(
     *,
     discovered: list[DiscoveredURL],
@@ -74,18 +78,24 @@ def apply_initial_selection_threshold(
     max_urls: int,
 ) -> list[DiscoveredURL]:
     capacity = max(0, int(max_urls))
-    # This is a competition rule, not a new content gate. If ranking did not
-    # fill the available capacity, retain the independent special-document and
-    # ordinary candidate semantics unchanged.
-    if capacity == 0 or len(selected) < capacity:
-        for order, item in enumerate(sorted(selected, key=_score, reverse=True), start=1):
+    selected_ranked = sorted(selected, key=_score, reverse=True)
+
+    # This is a competition rule, not a new content gate. Selection is
+    # contested whenever eligible candidates remain outside the initial set,
+    # including source/domain-cap and evidence-only reserves. This remains true
+    # even when caps prevent the selector from mechanically reaching 32.
+    contested = _unique_candidate_count(discovered) > _unique_candidate_count(
+        selected
+    )
+    if capacity == 0 or not contested:
+        for order, item in enumerate(selected_ranked, start=1):
             selection = _selection(item)
             selection["initial_selection_threshold_applied"] = False
             selection["selected_order"] = order
-        return sorted(selected, key=_score, reverse=True)
+        return selected_ranked
 
     retained: list[DiscoveredURL] = []
-    for item in selected:
+    for item in selected_ranked:
         selection = _selection(item)
         selection["initial_selection_threshold_applied"] = True
         selection["initial_selection_min_editorial_priority"] = (
