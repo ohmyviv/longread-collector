@@ -17,6 +17,11 @@ def _clean(value: str, limit: int = 240) -> str:
     return text[:limit]
 
 
+def _promote_domain(domains: list[str], domain: str) -> None:
+    domains[:] = [item for item in domains if item != domain]
+    domains.insert(0, domain)
+
+
 def build_source_chase_queries_v056(
     articles: list[ExtractedArticle],
     registry: list[dict[str, object]],
@@ -46,18 +51,15 @@ def build_source_chase_queries_v056(
             )
             if doi_match:
                 query_text = f'"{doi_match.group(0)}" original journal article'
-                if "doi.org" not in domains:
-                    domains.insert(0, "doi.org")
+                _promote_domain(domains, "doi.org")
             else:
                 query_text = f'"{seed}" original paper DOI journal'
         elif reason.startswith("reuters_strong_wire_"):
             query_text = f'"{_clean(article.title)}" site:reuters.com'
-            if "reuters.com" not in domains:
-                domains.insert(0, "reuters.com")
+            _promote_domain(domains, "reuters.com")
         elif reason.startswith("ap_strong_wire_"):
             query_text = f'"{_clean(article.title)}" site:apnews.com'
-            if "apnews.com" not in domains:
-                domains.insert(0, "apnews.com")
+            _promote_domain(domains, "apnews.com")
 
         result.append(
             SourceChaseQuery(
