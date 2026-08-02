@@ -17,7 +17,6 @@ from .final_recall_audit import (
     _ratio,
     _replace_date_rows,
     _source_key,
-    _upsert_daily,
     audit_final_recall,
 )
 from .normalization import canonicalize_url, domain_from_url
@@ -302,6 +301,30 @@ def enrich_recall_result(
     return {**result, "items": items, "summary": summary}
 
 
+def _column_name(column_number: int) -> str:
+    if column_number < 1:
+        raise ValueError("column_number must be positive")
+    result = ""
+    current = column_number
+    while current:
+        current, remainder = divmod(current - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
+
+
+def _upsert_daily_v11(ws: Any, report_date: str, row: list[object]) -> None:
+    end_column = _column_name(len(row))
+    for row_no, value in enumerate(ws.col_values(1)[1:], start=2):
+        if str(value).strip() == report_date:
+            ws.update(
+                range_name=f"A{row_no}:{end_column}{row_no}",
+                values=[row],
+                value_input_option="USER_ENTERED",
+            )
+            return
+    ws.append_row(row, value_input_option="USER_ENTERED")
+
+
 def audit_final_recall_v11(
     store: GoogleSheetStore,
     *,
@@ -344,7 +367,7 @@ def audit_final_recall_v11(
                 for row in result["items"]
             ],
         )
-        _upsert_daily(
+        _upsert_daily_v11(
             daily_ws,
             report_text,
             [result["summary"].get(header, "") for header in DAILY_V11_HEADERS],
