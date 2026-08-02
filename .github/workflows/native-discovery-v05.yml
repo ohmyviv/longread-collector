@@ -17,7 +17,6 @@ on:
       - 'src/longread_collector/page_gate_policy_v056.py'
       - 'src/longread_collector/post_extraction_gates_v056.py'
       - 'src/longread_collector/ranked_selection_v056.py'
-      - 'src/longread_collector/ranked_selection_v056c.py'
       - 'src/longread_collector/ranked_freshness_v056.py'
       - 'src/longread_collector/ranked_selection_plan_v056.py'
       - 'src/longread_collector/selection_plan_v056.py'
@@ -51,10 +50,6 @@ on:
 
 permissions:
   contents: read
-
-concurrency:
-  group: production-sheet-smoke-${{ github.repository }}
-  cancel-in-progress: false
 
 jobs:
   validate-native-discovery:
