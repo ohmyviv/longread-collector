@@ -1,0 +1,104 @@
+name: Offline validation v0.5.6
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/longread_collector/offline_replay_v056.py'
+      - 'src/longread_collector/offline_replay_sheet_adapter_v056.py'
+      - 'src/longread_collector/final_recall_audit_v11.py'
+      - 'src/longread_collector/final_recall_audit_v11_runner.py'
+      - 'src/longread_collector/registry_matching_v056.py'
+      - 'tests/test_offline_replay_v056.py'
+      - 'tests/test_offline_replay_sheet_adapter_v056.py'
+      - 'tests/test_offline_selector_debug_v056.py'
+      - 'tests/test_final_recall_audit_v11.py'
+      - 'tests/test_registry_matching_v056.py'
+      - '.github/workflows/offline-validation-v056.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: offline-validation-v056-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-labelled-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install . pytest
+      - name: Offline replay unit tests
+        run: |
+          pytest -q \
+            tests/test_offline_replay_v056.py \
+            tests/test_offline_replay_sheet_adapter_v056.py \
+            tests/test_offline_selector_debug_v056.py \
+            tests/test_final_recall_audit_v11.py \
+            tests/test_registry_matching_v056.py \
+            tests/test_operational_audit_v056.py
+      - name: Prepare Google credentials
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON_B64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_B64 }}
+        run: |
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON_B64"
+          echo "$GOOGLE_SERVICE_ACCOUNT_JSON_B64" | base64 -d > /tmp/google-service-account.json
+          chmod 600 /tmp/google-service-account.json
+      - name: Replay labelled Aug 1-2 development runs
+        env:
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          GOOGLE_SHEET_ID: 1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4
+          GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
+          TIMEZONE: Asia/Shanghai
+        run: |
+          for attempt in 1 2 3; do
+            if python -m longread_collector.offline_replay_sheet_adapter_v056 \
+              --run-id COL-20260801-190655-BJT-zh_evening \
+              --run-id COL-20260801-233524-BJT-intl_early \
+              --run-id COL-20260802-043748-BJT-pre_report \
+              --max-urls 32 \
+              --expected-truth-count 184 \
+              --output-json artifacts/offline-replay-v056.json; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            echo "Labelled replay read failed; waiting for Sheets quota window (attempt $attempt/3)."
+            sleep 75
+          done
+      - name: Materialize Aug 2 recall audit v1.1
+        env:
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          GOOGLE_SHEET_ID: 1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4
+          GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
+          TIMEZONE: Asia/Shanghai
+        run: |
+          for attempt in 1 2 3; do
+            if python -m longread_collector.final_recall_audit_v11_runner \
+              --report-date 2026-08-02 \
+              --cutoff-time 07:35 \
+              --lookback-hours 48; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            echo "Recall audit write failed; waiting for Sheets quota window (attempt $attempt/3)."
+            sleep 95
+          done
+      - name: Upload replay evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-validation-v056
+          path: artifacts/
+          if-no-files-found: warn

@@ -15,6 +15,20 @@ class DiscoveredURL:
     language: str = ""
     rank: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Compatibility aliases used by historical snapshot/audit payloads.
+    query_id: str = ""
+    rank_score: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.query_id and not self.query_or_source:
+            self.query_or_source = self.query_id
+        elif self.query_or_source and not self.query_id:
+            self.query_id = self.query_or_source
+
+        if self.rank_score and not self.rank:
+            self.rank = int(round(self.rank_score))
+        elif self.rank and not self.rank_score:
+            self.rank_score = float(self.rank)
 
 
 @dataclass(slots=True)
