@@ -35,16 +35,18 @@ def candidate(
     )
 
 
-def test_unknown_native_firecrawl_fallback_requires_depth_signal() -> None:
+def test_unknown_native_firecrawl_fallback_becomes_reserve_without_depth() -> None:
     shallow = candidate(
         url="https://example.com/article/62a9e903-c859-4b82-81dd-d0ee1d4adbb0",
         title="Company chairman faces investigation",
         method="firecrawl_search",
     )
     result = evaluate_freshness_policy(shallow, now=NOW)
-    assert result.allowed is False
-    assert result.reject_reason == (
-        "freshness_unknown_native_fallback_insufficient_evidence"
+    assert result.allowed is True
+    assert result.track == "ordinary_unknown_native_fallback_reserve"
+    assert shallow.metadata["selection"]["selection_force_reserve_only"] is True
+    assert shallow.metadata["freshness"]["unknown_date_policy"] == (
+        "reserve_only_native_search_fallback"
     )
 
     deep = candidate(
@@ -57,6 +59,7 @@ def test_unknown_native_firecrawl_fallback_requires_depth_signal() -> None:
     assert deep.metadata["freshness"]["unknown_date_policy"] == (
         "defer_deep_native_search_fallback"
     )
+    assert not deep.metadata.get("selection", {}).get("selection_force_reserve_only")
 
 
 def test_section_scan_unknown_article_retains_native_route_trust() -> None:
@@ -68,6 +71,23 @@ def test_section_scan_unknown_article_retains_native_route_trust() -> None:
     result = evaluate_freshness_policy(article, now=NOW)
     assert result.allowed is True
     assert result.track == "ordinary_unknown_native_structured"
+
+
+def test_government_privacy_resource_uses_special_document_track() -> None:
+    resource = candidate(
+        url=(
+            "https://ovic.vic.gov.au/privacy/resources-for-organisations/"
+            "artificial-intelligence-and-privacy-issues-and-challenges"
+        ),
+        title="Artificial intelligence and privacy: issues and challenges",
+        method="firecrawl_search",
+        native=False,
+    )
+    result = evaluate_freshness_policy(resource, now=NOW)
+    assert result.allowed is True
+    assert result.track == "special_document"
+    assert result.exception_reason == "government_resource_track"
+    assert resource.metadata["freshness"]["government_resource_track"] is True
 
 
 def test_explicit_republication_year_rejects_stale_method_article() -> None:
