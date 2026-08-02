@@ -80,12 +80,9 @@ def split_first_stage(
     max_attempts: int,
     reserve_slots: int = RESERVE_STAGE_SLOTS,
 ) -> tuple[list[DiscoveredURL], list[DiscoveredURL]]:
-    """Run the highest-utility 24 first and expose the lower eight to competition."""
+    """Run up to 24 highest-utility items first and reserve eight attempts."""
     bounded = list(selected[: max(0, max_attempts)])
-    defer_count = min(max(0, reserve_slots), len(bounded))
-    if defer_count == 0:
-        return bounded, []
-
+    first_capacity = max(0, int(max_attempts) - max(0, int(reserve_slots)))
     ranked = sorted(
         bounded,
         key=lambda item: (
@@ -94,7 +91,7 @@ def split_first_stage(
         ),
         reverse=True,
     )
-    first_count = len(bounded) - defer_count
+    first_count = min(first_capacity, len(ranked))
     first = ranked[:first_count]
     deferred = ranked[first_count:]
     for order, item in enumerate(first, start=1):
@@ -149,8 +146,6 @@ def _schedule(
         return False
     attempted.add(canonical)
     second_stage.append(item)
-    # Reserve capacity pessimistically: a successful extraction must remain
-    # within source/domain and absolute host caps.
     group_counts[_group(item)] += 1
     host_counts[domain_from_url(item.url)] += 1
     return True
@@ -191,8 +186,6 @@ def build_second_stage(
     ]
     reserves = list(plan.reserves)
 
-    # A failed high-quality article first receives the best same-source/domain
-    # replacement, preserving editorial continuity without breaching caps.
     for failed in failures:
         if len(second_stage) >= remaining_slots:
             break
@@ -227,9 +220,6 @@ def build_second_stage(
             selection["reserve_replacement_for"] = canonicalize_url(failed.url)
             selection["reserve_replacement_reason"] = "failed_first_stage"
 
-    # The remaining second-stage slots are a genuine editorial competition.
-    # Deferred Top-32 items no longer have automatic precedence over stronger
-    # cap-overflow or evidence-only reserves.
     deferred_urls = {canonicalize_url(item.url) for item in deferred}
     reserve_urls = {canonicalize_url(item.url) for item in reserves}
     candidate_pool = list(deferred) + list(reserves)
