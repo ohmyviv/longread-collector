@@ -15,13 +15,20 @@ _AP_AUTHOR_RE = re.compile(
     r"^(?:by\s+)?(?:the\s+)?associated press$|^(?:by\s+)?ap(?:\s+news)?$", re.I
 )
 _REUTERS_DATELINE_RE = re.compile(
-    r"^(?:[A-Z][A-Z .'-]{2,40},?\s+(?:[A-Z][a-z]+\s+\d{1,2},?\s+20\d{2}\s+)?"
-    r"\(Reuters\)\s*[-–—]|(?:By\s+[^\n]{2,100}\n){0,1}[^\n]{0,160}\bReuters\b)",
-    re.I | re.M,
+    r"^[A-Z][A-Z .'-]{2,40},?\s+(?:[A-Z][a-z]+\s+\d{1,2},?\s+20\d{2}\s+)?"
+    r"\(Reuters\)\s*[-–—]",
+    re.M,
 )
 _AP_DATELINE_RE = re.compile(
-    r"^(?:[A-Z][A-Z .'-]{2,40}\s*\(AP\)\s*[-–—]|"
-    r"(?:By\s+)?(?:The\s+)?Associated Press\b)",
+    r"^[A-Z][A-Z .'-]{2,40}\s*\(AP\)\s*[-–—]",
+    re.M,
+)
+_REUTERS_BYLINE_RE = re.compile(
+    r"^(?:By\s+[^\n]{2,100}\n)?Reporting by\s+[^\n]{2,180}(?:;|\n|$)",
+    re.I | re.M,
+)
+_AP_BYLINE_RE = re.compile(
+    r"^(?:By\s+)?(?:The\s+)?Associated Press\s*$",
     re.I | re.M,
 )
 _REUTERS_COPYRIGHT_RE = re.compile(r"(?:©|copyright)\s*(?:20\d{2}\s*)?Reuters\b", re.I)
@@ -93,6 +100,8 @@ def detect_wire_evidence(
         ("AP", "structured_author", _AP_AUTHOR_RE, author_clean),
         ("Reuters", "wire_dateline", _REUTERS_DATELINE_RE, lead),
         ("AP", "wire_dateline", _AP_DATELINE_RE, lead),
+        ("Reuters", "wire_byline", _REUTERS_BYLINE_RE, lead),
+        ("AP", "wire_byline", _AP_BYLINE_RE, lead),
         ("Reuters", "copyright_notice", _REUTERS_COPYRIGHT_RE, lead),
         ("AP", "copyright_notice", _AP_COPYRIGHT_RE, lead),
         ("Reuters", "explicit_original_statement", _REUTERS_ORIGINAL_RE, lead),
@@ -102,9 +111,6 @@ def detect_wire_evidence(
         match = pattern.search(value)
         if match is None:
             continue
-        # A real author/dateline/copyright statement remains strong even if the
-        # body later mentions the foundation; generic string matches never enter
-        # this function as strong evidence.
         return WireEvidence(
             service,
             True,
