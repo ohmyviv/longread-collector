@@ -124,7 +124,7 @@ def test_academic_paper_uses_stable_special_type() -> None:
 
 def test_government_privacy_guidance_is_special() -> None:
     result = classify(
-        "https://privacy.gov.example/guidance/artificial-intelligence-and-privacy.pdf",
+        "https://privacy.gov/guidance/artificial-intelligence-and-privacy.pdf",
         "Artificial Intelligence and Privacy – Issues and Challenges",
         markdown="Official regulatory guidance for public agencies.",
     )
@@ -160,7 +160,7 @@ def test_university_paper_summary_requires_original_paper() -> None:
 def test_newsletter_still_rejected() -> None:
     result = classify(
         "https://www.theatlantic.com/newsletters/archive/2026/08/natures-stories/",
-        "Nature’s Most Extraordinary Stories Newsletter",
+        "Daily Briefing: Nature’s Most Extraordinary Stories",
         content_chars=3000,
     )
     assert result.candidate_disposition == "reject"
