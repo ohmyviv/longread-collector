@@ -5,30 +5,39 @@ on:
   pull_request:
     paths:
       - 'src/longread_collector/classification_v055.py'
+      - 'src/longread_collector/freshness_v056.py'
+      - 'src/longread_collector/freshness_policy_v056.py'
+      - 'src/longread_collector/page_gates_v056.py'
+      - 'src/longread_collector/page_gate_policy_v056.py'
+      - 'src/longread_collector/post_extraction_gates_v056.py'
       - 'src/longread_collector/ranked_selection_v055.py'
       - 'src/longread_collector/ranked_selection_v056.py'
+      - 'src/longread_collector/ranked_freshness_v056.py'
       - 'src/longread_collector/ranked_selection_plan_v056.py'
       - 'src/longread_collector/selection_plan_v056.py'
       - 'src/longread_collector/staged_reserve_v056.py'
       - 'src/longread_collector/prefilter_v056.py'
+      - 'src/longread_collector/prefilter_v056c.py'
       - 'src/longread_collector/source_chase_v055.py'
       - 'src/longread_collector/pipeline_v055.py'
       - 'src/longread_collector/pipeline_v056a.py'
       - 'src/longread_collector/pipeline_v056b.py'
+      - 'src/longread_collector/pipeline_v056c.py'
       - 'src/longread_collector/pipeline_v054.py'
       - 'src/longread_collector/known_source_fixes_smoke.py'
       - 'tests/test_editorial_hotfix_v055.py'
       - 'tests/test_selection_reserve_v056.py'
       - 'tests/test_staged_reserve_v056.py'
+      - 'tests/test_freshness_v056.py'
+      - 'tests/test_freshness_policy_v056.py'
+      - 'tests/test_page_gates_v056.py'
+      - 'tests/test_page_gate_policy_v056.py'
+      - 'tests/test_post_extraction_gates_v056.py'
       - '.github/workflows/editorial-hotfix-v055.yml'
       - '.github/workflows/collector.yml'
 
 permissions:
   contents: read
-
-concurrency:
-  group: production-sheet-smoke-${{ github.repository }}
-  cancel-in-progress: false
 
 jobs:
   validate-editorial-hotfix:
