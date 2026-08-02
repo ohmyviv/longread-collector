@@ -1,6 +1,7 @@
 from longread_collector.models import DiscoveredURL
 from longread_collector.pipeline_v056b import filter_discovered as snapshot_filter
 from longread_collector.prefilter_v056 import filter_discovered
+from longread_collector.ranked_selection_v056 import OPEN_DIVERSITY_FLOOR
 from longread_collector.recall_instrumentation import (
     begin_snapshot_capture,
     current_snapshot_capture,
@@ -80,7 +81,7 @@ def test_native_third_and_fourth_rounds_precede_open_overflow() -> None:
     ) == list(range(1, 33))
     assert sum(
         item.metadata["selection"].get("selection_phase")
-        in {"native_round_3", "native_round_4"}
+        == "global_quality_fill"
         for item in accepted_native
     ) == 8
     assert sum(
@@ -89,7 +90,9 @@ def test_native_third_and_fourth_rounds_precede_open_overflow() -> None:
     ) == 8
 
     fifth_items = [
-        item for item in discovered if item.metadata.get("purpose") == "native_source_scan"
+        item
+        for item in discovered
+        if item.metadata.get("purpose") == "native_source_scan"
         and item.rank == 5
     ]
     assert len(fifth_items) == 4
@@ -118,26 +121,23 @@ def test_open_overflow_only_fills_capacity_after_native_is_exhausted() -> None:
 
     accepted, _ = filter_discovered(discovered, max_urls=32, max_per_domain=2)
     accepted_native = [
-        item for item in accepted
+        item
+        for item in accepted
         if item.metadata["selection"]["selection_bucket"] == "native"
     ]
     accepted_open = [
-        item for item in accepted
+        item
+        for item in accepted
         if item.metadata["selection"]["selection_bucket"] == "open"
     ]
     assert len(accepted_native) == 12
     assert len(accepted_open) == 20
     assert len(accepted) == 32
-    assert sum(
-        item.metadata["selection"].get("selection_phase")
-        == "open_cross_bucket_backfill"
-        for item in accepted_open
-    ) == 4
 
 
 def test_native_soft_target_is_met_when_sixteen_eligible_items_exist() -> None:
     discovered = [
-        native(source_id, article_index)
+        native(str(source_id), article_index)
         for source_id in range(8)
         for article_index in range(1, 3)
     ]
@@ -155,6 +155,54 @@ def test_native_soft_target_is_met_when_sixteen_eligible_items_exist() -> None:
         item.metadata["selection"]["selection_bucket"] == "open"
         for item in accepted
     ) == 16
+
+
+def test_quality_fill_can_exceed_sixteen_native_after_open_floor() -> None:
+    discovered = [
+        native(str(source_id), article_index)
+        for source_id in range(8)
+        for article_index in range(1, 5)
+    ]
+    discovered.extend(
+        open_item(domain_index, article_index)
+        for domain_index in range(16)
+        for article_index in range(1, 3)
+    )
+    accepted, _ = filter_discovered(discovered, max_urls=32, max_per_domain=2)
+    native_count = sum(
+        item.metadata["selection"]["selection_bucket"] == "native"
+        for item in accepted
+    )
+    open_count = len(accepted) - native_count
+    assert native_count == 32 - OPEN_DIVERSITY_FLOOR
+    assert open_count == OPEN_DIVERSITY_FLOOR
+    assert all(
+        item.metadata["selection"]["selection_status"] == "selected"
+        for item in accepted
+    )
+
+
+def test_investigations_outrank_generic_items_within_source_cap() -> None:
+    titles = [
+        "Daily company appointment update",
+        "Short transport price update",
+        "起底防晒衣：实测四件全部翻车",
+        "暗访酸臭原料灰色产业链",
+        "观势：消费动能怎么上坡",
+        "核电审批节奏背后的产业变化",
+    ]
+    discovered = [native("curated", index) for index in range(1, 7)]
+    for item, title in zip(discovered, titles, strict=True):
+        item.title = title
+        item.description = ""
+    accepted, _ = filter_discovered(discovered, max_urls=4, max_per_domain=2)
+    accepted_titles = {item.title for item in accepted}
+    assert accepted_titles == set(titles[2:])
+    assert all(
+        item.metadata["selection"]["score_components"]["editorial_priority"]
+        > 0
+        for item in accepted
+    )
 
 
 def test_capacity_reserve_is_not_snapshot_page_rejection() -> None:
@@ -205,7 +253,7 @@ def test_hard_page_gate_remains_prefilter_rejection() -> None:
 
 def test_extraction_attempt_list_never_exceeds_max_urls() -> None:
     discovered = [
-        native(source_id, article_index)
+        native(str(source_id), article_index)
         for source_id in range(12)
         for article_index in range(1, 7)
     ]
