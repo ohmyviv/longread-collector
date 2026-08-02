@@ -1,6 +1,6 @@
 """Narrow narrative-profile priority adjustment for v0.5.6g.
 
-The general editorial scorer already recognizes profiles and obituaries.  This
+The general editorial scorer already recognizes profiles and obituaries. This
 adapter raises strongly signalled narrative profiles to a minimum profile
 signal so an older, substantive portrait is not displaced by a routine item
 from the same source solely because of a small freshness-score difference.
@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from urllib.parse import urlsplit
 
+from . import ranked_freshness_v056 as _freshness
 from . import ranked_selection_v056 as _ranked
 from .models import DiscoveredURL
 
@@ -32,9 +33,10 @@ def _strong_narrative_profile(item: DiscoveredURL) -> bool:
 
 
 def install_profile_priority() -> None:
-    """Install an idempotent score adapter after the main editorial scorer."""
-    current_score = _ranked._score
+    """Install an idempotent adapter that survives later scorer reinstalls."""
+    current_score = _freshness.score_with_resolved_freshness
     if getattr(current_score, "_profile_priority_version", "") == PROFILE_PRIORITY_VERSION:
+        _ranked._score = current_score
         return
 
     def score_with_profile_priority(
@@ -53,12 +55,18 @@ def install_profile_priority() -> None:
                     components.get("editorial_priority", 0)
                 ) + adjustment
         components["profile_priority_adjustment"] = adjustment
-        components["profile_priority_version"] = PROFILE_PRIORITY_VERSION
+        item.metadata.setdefault("selection", {})["profile_priority_version"] = (
+            PROFILE_PRIORITY_VERSION
+        )
         if adjustment:
             score = (components["editorial_priority"], *score[1:])
         return score, components
 
     setattr(score_with_profile_priority, "_profile_priority_version", PROFILE_PRIORITY_VERSION)
+    # ``install_ranked_freshness`` resolves this module global at call time, so
+    # replacing it here keeps the profile adjustment active in offline replays
+    # that reinstall the base scorer before every run.
+    _freshness.score_with_resolved_freshness = score_with_profile_priority
     _ranked._score = score_with_profile_priority
 
 
