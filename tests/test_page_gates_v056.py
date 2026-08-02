@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from longread_collector.models import DiscoveredURL
-from longread_collector.page_gates_v056 import evaluate_page_gate
-from longread_collector.prefilter_v056 import filter_discovered
+from longread_collector.page_gate_policy_v056 import evaluate_page_gate_policy
+from longread_collector.prefilter_v056c import filter_discovered
 
 
 def item(url: str, title: str, description: str = "") -> DiscoveredURL:
@@ -16,7 +16,7 @@ def item(url: str, title: str, description: str = "") -> DiscoveredURL:
 
 
 def test_press_release_path_is_cross_domain_gate() -> None:
-    decision = evaluate_page_gate(
+    decision = evaluate_page_gate_policy(
         item(
             "https://www.unep.org/news-and-stories/press-release/new-report-infrastructure-climate",
             "New report reveals how infrastructure defines our climate",
@@ -27,7 +27,7 @@ def test_press_release_path_is_cross_domain_gate() -> None:
 
 
 def test_commerce_buying_guide_is_rejected() -> None:
-    decision = evaluate_page_gate(
+    decision = evaluate_page_gate_policy(
         item(
             "https://www.wired.com/gallery/best-organic-mattresses/",
             "Best Organic Mattresses (2026)",
@@ -38,7 +38,7 @@ def test_commerce_buying_guide_is_rejected() -> None:
 
 
 def test_essay_farm_is_rejected_without_broad_education_block() -> None:
-    decision = evaluate_page_gate(
+    decision = evaluate_page_gate_policy(
         item(
             "https://domyessay.com/blog/history-essay-topics",
             "280+ History Essay Topics",
@@ -48,7 +48,7 @@ def test_essay_farm_is_rejected_without_broad_education_block() -> None:
 
 
 def test_institution_profile_is_rejected() -> None:
-    decision = evaluate_page_gate(
+    decision = evaluate_page_gate_policy(
         item(
             "https://www.tsinghua.edu.cn/centers/public-economics",
             "公共经济、金融与治理研究中心",
@@ -58,7 +58,7 @@ def test_institution_profile_is_rejected() -> None:
 
 
 def test_resource_database_index_is_rejected() -> None:
-    decision = evaluate_page_gate(
+    decision = evaluate_page_gate_policy(
         item(
             "https://libguides.example.edu/public-policy/databases",
             "Journal articles – databases",
@@ -68,7 +68,7 @@ def test_resource_database_index_is_rejected() -> None:
 
 
 def test_public_notice_is_rejected() -> None:
-    decision = evaluate_page_gate(
+    decision = evaluate_page_gate_policy(
         item(
             "https://caijing.com.cn/2026/07/notice.html",
             "关于推荐参评第36届中国新闻奖作品的公示",
@@ -78,7 +78,7 @@ def test_public_notice_is_rejected() -> None:
 
 
 def test_podcast_page_is_rejected() -> None:
-    decision = evaluate_page_gate(
+    decision = evaluate_page_gate_policy(
         item(
             "https://www.theguardian.com/environment/audio/2026/aug/01/rewilding-podcast",
             "Can a pioneering project show that rewilding really works? – podcast",
@@ -88,7 +88,7 @@ def test_podcast_page_is_rejected() -> None:
 
 
 def test_course_or_program_page_is_rejected() -> None:
-    decision = evaluate_page_gate(
+    decision = evaluate_page_gate_policy(
         item(
             "https://www.sarahlawrence.edu/undergraduate/areas-of-study/public-policy/",
             "Public Policy - Sarah Lawrence College",
@@ -98,14 +98,12 @@ def test_course_or_program_page_is_rejected() -> None:
 
 
 def test_category_page_with_generic_title_is_rejected() -> None:
-    decision = evaluate_page_gate(
-        item("https://www.cnfin.com/hg/", "宏观经济")
-    )
+    decision = evaluate_page_gate_policy(item("https://www.cnfin.com/hg/", "宏观经济"))
     assert decision.reject_reason == "category_or_channel_page"
 
 
 def test_academic_paper_is_not_rejected_by_education_domain() -> None:
-    decision = evaluate_page_gate(
+    decision = evaluate_page_gate_policy(
         item(
             "https://academic.oup.com/journal/article/42/1/100/123456",
             "Climate-smart infrastructure in the United States",
@@ -115,7 +113,7 @@ def test_academic_paper_is_not_rejected_by_education_domain() -> None:
 
 
 def test_government_guidance_pdf_is_not_rejected() -> None:
-    decision = evaluate_page_gate(
+    decision = evaluate_page_gate_policy(
         item(
             "https://privacy.gov.example/guidance/artificial-intelligence-and-privacy.pdf",
             "Artificial Intelligence and Privacy – Issues and Challenges",
@@ -125,7 +123,7 @@ def test_government_guidance_pdf_is_not_rejected() -> None:
 
 
 def test_think_tank_report_is_not_mistaken_for_project_landing() -> None:
-    decision = evaluate_page_gate(
+    decision = evaluate_page_gate_policy(
         item(
             "https://www.oecd.org/reports/digital-government-journey-2026.html",
             "How artificial intelligence is accelerating the digital government journey",
@@ -136,7 +134,7 @@ def test_think_tank_report_is_not_mistaken_for_project_landing() -> None:
 
 
 def test_reported_article_mentioning_conference_is_not_event_gate() -> None:
-    decision = evaluate_page_gate(
+    decision = evaluate_page_gate_policy(
         item(
             "https://news.example.com/2026/08/01/investigation.html",
             "How the climate conference reshaped local politics",
@@ -144,6 +142,17 @@ def test_reported_article_mentioning_conference_is_not_event_gate() -> None:
         )
     )
     assert decision.rejected is False
+
+
+def test_article_path_guards_program_word_false_positive() -> None:
+    decision = evaluate_page_gate_policy(
+        item(
+            "https://news.example.com/articles/2026/08/01/degree-program-investigation.html",
+            "Investigation finds failures in a university degree program",
+        )
+    )
+    assert decision.rejected is False
+    assert decision.evidence == "article_path_guard"
 
 
 def test_prefilter_removes_non_articles_before_capacity_selection() -> None:
