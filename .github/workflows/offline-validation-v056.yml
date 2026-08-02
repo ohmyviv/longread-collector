@@ -7,6 +7,7 @@ on:
       - 'src/longread_collector/offline_replay_v056.py'
       - 'src/longread_collector/final_recall_audit_v11.py'
       - 'tests/test_offline_replay_v056.py'
+      - 'tests/test_offline_selector_debug_v056.py'
       - 'tests/test_final_recall_audit_v11.py'
       - '.github/workflows/offline-validation-v056.yml'
 
@@ -28,6 +29,7 @@ jobs:
         run: |
           pytest -q \
             tests/test_offline_replay_v056.py \
+            tests/test_offline_selector_debug_v056.py \
             tests/test_final_recall_audit_v11.py \
             tests/test_operational_audit_v056.py
       - name: Prepare Google credentials
