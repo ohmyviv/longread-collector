@@ -6,21 +6,34 @@ on:
     paths:
       - 'src/longread_collector/classification_v055.py'
       - 'src/longread_collector/ranked_selection_v055.py'
+      - 'src/longread_collector/ranked_selection_v056.py'
+      - 'src/longread_collector/ranked_selection_plan_v056.py'
+      - 'src/longread_collector/selection_plan_v056.py'
+      - 'src/longread_collector/staged_reserve_v056.py'
+      - 'src/longread_collector/prefilter_v056.py'
       - 'src/longread_collector/source_chase_v055.py'
       - 'src/longread_collector/pipeline_v055.py'
+      - 'src/longread_collector/pipeline_v056a.py'
+      - 'src/longread_collector/pipeline_v056b.py'
       - 'src/longread_collector/pipeline_v054.py'
       - 'src/longread_collector/known_source_fixes_smoke.py'
       - 'tests/test_editorial_hotfix_v055.py'
+      - 'tests/test_selection_reserve_v056.py'
+      - 'tests/test_staged_reserve_v056.py'
       - '.github/workflows/editorial-hotfix-v055.yml'
       - '.github/workflows/collector.yml'
 
 permissions:
   contents: read
 
+concurrency:
+  group: production-sheet-smoke-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   validate-editorial-hotfix:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -69,8 +82,17 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
           TIMEZONE: Asia/Shanghai
         run: |
-          python -m longread_collector.known_source_fixes_smoke \
-            --output-json artifacts/known-source-fixes-smoke-v055.json
+          for attempt in 1 2 3; do
+            if python -m longread_collector.known_source_fixes_smoke \
+              --output-json artifacts/known-source-fixes-smoke-v055.json; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            echo "Sheet-backed smoke failed; using staggered quota backoff (attempt $attempt/3)."
+            sleep 95
+          done
       - name: Upload validation evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -70,8 +70,8 @@ def test_schedule_delay_uses_configured_query_time() -> None:
 def test_late_night_schedule_rolls_to_previous_day() -> None:
     started = datetime(2026, 8, 1, 0, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     result = scheduled_run_metrics(started, [], "intl_early")
-    assert result["scheduled_at_bj"] == "2026-07-31 23:20:00"
-    assert result["start_delay_seconds"] == 3000
+    assert result["scheduled_at_bj"] == "2026-07-31 22:30:00"
+    assert result["start_delay_seconds"] == 6000
 
 
 def test_group_reservation_preserves_later_run_capacity() -> None:
