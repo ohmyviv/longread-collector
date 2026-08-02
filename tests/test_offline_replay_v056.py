@@ -67,14 +67,14 @@ def truth(
 
 def test_replay_applies_gates_and_selects_true_candidates() -> None:
     good_one = snapshot(
-        "https://one.example.com/2026/08/01/investigation.html",
+        "https://www.propublica.org/article/procurement-investigation",
         "Investigation reveals procurement failures",
-        source_id="one",
+        source_id="propublica",
     )
     good_two = snapshot(
-        "https://two.example.com/2026/08/01/feature.html",
+        "https://www.quantamagazine.org/climate-adaptation-feature-20260801/",
         "A reported feature on climate adaptation",
-        source_id="two",
+        source_id="quanta",
     )
     buying_guide = snapshot(
         "https://www.wired.com/gallery/best-organic-mattresses/",
@@ -126,14 +126,14 @@ def test_replay_applies_gates_and_selects_true_candidates() -> None:
 
 def test_replay_counts_high_confidence_missed_candidate() -> None:
     first = snapshot(
-        "https://one.example.com/2026/08/01/feature.html",
+        "https://www.propublica.org/article/strong-reported-feature",
         "A strong reported feature",
-        source_id="one",
+        source_id="propublica",
     )
     second = snapshot(
-        "https://two.example.com/2026/08/01/investigation.html",
+        "https://www.quantamagazine.org/important-investigation-20260801/",
         "An important investigation",
-        source_id="two",
+        source_id="quanta",
     )
     truth_rows = [
         truth(first["url"], first["title"], "formal_candidate"),
@@ -159,17 +159,19 @@ def test_replay_counts_high_confidence_missed_candidate() -> None:
 
 
 def test_aggregate_uses_exact_selected_denominators() -> None:
+    first_url = "https://www.propublica.org/article/strong-reported-feature"
     first_metrics, _ = replay_run(
         run_id=RUN_ID,
         snapshot_rows=[
             snapshot(
-                "https://one.example.com/2026/08/01/feature.html",
+                first_url,
                 "A strong reported feature",
+                source_id="propublica",
             )
         ],
         truth_rows=[
             truth(
-                "https://one.example.com/2026/08/01/feature.html",
+                first_url,
                 "A strong reported feature",
                 "formal_candidate",
             )
