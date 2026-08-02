@@ -7,6 +7,7 @@ from . import ranked_selection_v056 as _ranked
 from .initial_selection_threshold_v056g import apply_initial_selection_threshold
 from .models import DiscoveredURL
 from .normalization import domain_from_url
+from .profile_priority_v056g import install_profile_priority
 from .ranked_selection_v056 import (
     OPEN_DOMAIN_CAP,
     SELECTION_VERSION,
@@ -15,8 +16,11 @@ from .ranked_selection_v056 import (
 from .selection_plan_v056 import publish_selection_plan
 
 # Install the resolved-publication and editorial score adapter while preserving
-# the reserve allocator's hard source/domain/host caps.
+# the reserve allocator's hard source/domain/host caps.  The profile adapter is
+# deliberately installed second so it can apply a narrow minimum signal without
+# replacing any of the general ranking components.
 _ranked_freshness.install_ranked_freshness()
+install_profile_priority()
 
 
 def _unknown_native_search_fallback(item: DiscoveredURL) -> bool:
