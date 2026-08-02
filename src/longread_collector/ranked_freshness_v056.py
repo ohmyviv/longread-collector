@@ -1,6 +1,6 @@
 """Rank v0.5.6 candidates with resolved dates and editorial utility.
 
-The freshness policy remains authoritative.  This module adds a transparent
+The freshness policy remains authoritative. This module adds a transparent
 pre-extraction editorial score so the portfolio can compare curated reporting,
 special documents and low-value search results without source allowlists.
 """
@@ -16,7 +16,7 @@ from .freshness_policy_v056f import evaluate_freshness_policy
 from .models import DiscoveredURL
 from .ranked_selection_v055 import _score as _legacy_score
 
-RANKING_FRESHNESS_VERSION = "editorial-resolved-ranking-v0.5.6g2"
+RANKING_FRESHNESS_VERSION = "editorial-resolved-ranking-v0.5.6g3"
 
 _STRONG_REPORTING_RE = re.compile(
     r"(?:暗访|起底|实测|调查报道|独家调查|深度调查|深度报道|特稿|专访|"
@@ -41,6 +41,11 @@ _FEATURE_PATH_RE = re.compile(
 )
 _PREMIUM_COMMENTARY_PATH_RE = re.compile(
     r"/(?:critics-notebook|open-questions)(?:/|$)", re.I
+)
+_POLICY_REPORT_RE = re.compile(
+    r"/(?:task-force-reports?|major-reports?|policy-reports?)(?:/|$)|"
+    r"\b(?:task force report|economic security strategy|commission report)\b",
+    re.I,
 )
 _LOW_VALUE_FORMAT_RE = re.compile(
     r"/(?:podcasts?|audio|newsletters?|digest)(?:/|$)|"
@@ -84,7 +89,9 @@ _PLACEHOLDER_TITLE_RE = re.compile(
     re.I,
 )
 _DIGEST_PATH_RE = re.compile(r"/(?:digest|briefing|roundup)(?:/|$)", re.I)
-_BARE_REPORT_RE = re.compile(r"(?:research report|outlook report|发展研究报告|展望报告)$", re.I)
+_BARE_REPORT_RE = re.compile(
+    r"(?:research report|outlook report|发展研究报告|展望报告)$", re.I
+)
 _YEAR_RE = re.compile(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)")
 
 
@@ -138,6 +145,7 @@ def _editorial_components(
         reporting_signal += 4
     if "/article/" in path.lower() or "/news/" in path.lower():
         reporting_signal += 2
+    policy_report_signal = 14 if _POLICY_REPORT_RE.search(sample) else 0
 
     special_track = str(
         selection.get("freshness_track") or freshness.get("freshness_track") or ""
@@ -148,13 +156,11 @@ def _editorial_components(
         sample, special=special_material
     )
 
-    generic_overview_penalty = -8 if _GENERIC_OVERVIEW_RE.search(sample) else 0
-    commercial_penalty = -22 if _COMMERCIAL_RE.search(sample) else 0
+    generic_overview_penalty = -16 if _GENERIC_OVERVIEW_RE.search(sample) else 0
+    commercial_penalty = -30 if _COMMERCIAL_RE.search(sample) else 0
     book_review_penalty = -20 if _BOOK_REVIEW_RE.search(sample) else 0
     low_value_format_penalty = -14 if _LOW_VALUE_FORMAT_RE.search(sample) else 0
-    service_or_archive_penalty = (
-        -24 if _SERVICE_OR_ARCHIVE_RE.search(sample) else 0
-    )
+    service_or_archive_penalty = -24 if _SERVICE_OR_ARCHIVE_RE.search(sample) else 0
     if "archives." in parts.netloc.lower() or "/archives/" in path.lower():
         service_or_archive_penalty = min(service_or_archive_penalty, -18)
     if _DIGEST_PATH_RE.search(path):
@@ -167,13 +173,11 @@ def _editorial_components(
         else 0
     )
 
-    # ``quality`` already includes the unchanged freshness-policy penalty.  It
-    # is deliberately amplified so unknown/stale-risk evidence cannot be
-    # hidden by a superficially attractive title.
     editorial_priority = (
         50
         + native_signal
         + reporting_signal
+        + policy_report_signal
         + int(components.get("quality", 0)) * 4
         + min(int(components.get("article_confidence", 0)), 8)
         + min(int(components.get("depth", 0)), 4)
@@ -191,6 +195,7 @@ def _editorial_components(
         "editorial_priority": editorial_priority,
         "native_signal": native_signal,
         "reporting_signal": reporting_signal,
+        "policy_report_signal": policy_report_signal,
         "special_material_penalty": special_material_penalty,
         "bibliographic_year_penalty": bibliographic_year_penalty,
         "generic_overview_penalty": generic_overview_penalty,
