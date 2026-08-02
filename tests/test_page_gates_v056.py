@@ -152,7 +152,7 @@ def test_article_path_guards_program_word_false_positive() -> None:
         )
     )
     assert decision.rejected is False
-    assert decision.evidence == "article_path_guard"
+    assert decision.evidence == "reported_article_program_guard"
 
 
 def test_prefilter_removes_non_articles_before_capacity_selection() -> None:
