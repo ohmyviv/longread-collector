@@ -7,6 +7,7 @@ without rewriting historical data or loading cached article bodies.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from . import offline_replay_v056 as replay
@@ -14,6 +15,7 @@ from .sheets import GoogleSheetStore
 
 TRUTH_STATUS_PREFIX = "v055_stage3"
 TRUTH_STATUS_SUFFIX = "ground_truth"
+_ORIGINAL_REPLAY_RUN = replay.replay_run
 
 
 def _records(values: list[list[Any]]) -> list[dict[str, Any]]:
@@ -44,15 +46,24 @@ def normalize_sheet_rows(
     review_values: list[list[Any]],
     run_ids: set[str],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    snapshot_records = _records(snapshot_values)
+    if not snapshot_values:
+        return [], []
+    snapshot_headers = [str(value or "").strip() for value in snapshot_values[0]]
     review_records = _records(review_values)
 
     normalized_snapshots: list[dict[str, Any]] = []
     snapshot_by_article: dict[str, dict[str, Any]] = {}
     snapshot_by_sheet_row: dict[int, dict[str, Any]] = {}
 
-    # Header occupies row 1, so the first record is physical Sheet row 2.
-    for sheet_row, row in enumerate(snapshot_records, start=2):
+    # Preserve physical row numbers even if a future Sheet contains blank rows.
+    for sheet_row, values in enumerate(snapshot_values[1:], start=2):
+        if not any(str(value or "").strip() for value in values):
+            continue
+        row = {
+            header: (values[index] if index < len(values) else "")
+            for index, header in enumerate(snapshot_headers)
+            if header
+        }
         collector_run_id = str(row.get("collector_run_id", "")).strip()
         normalized = dict(row)
         normalized["run_id"] = collector_run_id
@@ -139,8 +150,21 @@ def load_replay_rows(
     )
 
 
+def replay_run_with_capacity_metric(*args: Any, **kwargs: Any):
+    metrics, evidence = _ORIGINAL_REPLAY_RUN(*args, **kwargs)
+    unselected_survivors = max(
+        0,
+        metrics.discovered_rows
+        - metrics.pre_extraction_rejects
+        - metrics.selected_count,
+    )
+    evidence["capacity_not_selected_count"] = unselected_survivors
+    return replace(metrics, capacity_not_selected=unselected_survivors), evidence
+
+
 def main() -> None:
     replay.load_replay_rows = load_replay_rows
+    replay.replay_run = replay_run_with_capacity_metric
     replay.main()
 
 
