@@ -16,6 +16,7 @@ _RESERVE_STATUSES = {
     "absolute_host_reserve",
     "final_not_selected",
     "evidence_reserve_only",
+    "editorial_priority_reserve",
 }
 
 
