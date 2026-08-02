@@ -11,13 +11,17 @@ on:
       - 'src/longread_collector/effective_route_v056.py'
       - 'src/longread_collector/effective_route_extensions_v056.py'
       - 'src/longread_collector/effective_route_smoke_v056.py'
+      - 'src/longread_collector/freshness_v056.py'
+      - 'src/longread_collector/page_gates_v056.py'
       - 'src/longread_collector/ranked_selection_v056.py'
+      - 'src/longread_collector/ranked_selection_v056c.py'
       - 'src/longread_collector/ranked_selection_plan_v056.py'
       - 'src/longread_collector/selection_plan_v056.py'
       - 'src/longread_collector/staged_reserve_v056.py'
       - 'src/longread_collector/prefilter_v056.py'
       - 'src/longread_collector/pipeline_v056a.py'
       - 'src/longread_collector/pipeline_v056b.py'
+      - 'src/longread_collector/pipeline_v056c.py'
       - 'src/longread_collector/pipeline_v055.py'
       - 'src/longread_collector/pipeline_v054.py'
       - 'src/longread_collector/operational_hotfix.py'
@@ -32,6 +36,8 @@ on:
       - 'tests/test_effective_route_extensions_v056.py'
       - 'tests/test_selection_reserve_v056.py'
       - 'tests/test_staged_reserve_v056.py'
+      - 'tests/test_freshness_v056.py'
+      - 'tests/test_page_gates_v056.py'
       - 'tests/test_operational_hotfix_v053.py'
       - '.github/workflows/native-discovery-v05.yml'
 
@@ -58,6 +64,8 @@ jobs:
             tests/test_effective_route_extensions_v056.py \
             tests/test_selection_reserve_v056.py \
             tests/test_staged_reserve_v056.py \
+            tests/test_freshness_v056.py \
+            tests/test_page_gates_v056.py \
             tests/test_operational_hotfix_v053.py \
             tests/test_source_registry_v1.py
       - name: Prepare Google credentials
