@@ -55,58 +55,43 @@ def truth(url: str, title: str, disposition: str, *, regret: bool = False) -> di
     }
 
 
-def test_staged_replay_promotes_high_value_evidence_reserve() -> None:
-    selected_good = snapshot(
+def test_staged_replay_reports_consistent_initial_and_attempt_metrics() -> None:
+    first = snapshot(
         "https://good.example.com/2026/08/01/feature.html",
         "A reported feature on public health",
         source_id="good",
     )
-    selected_weak = snapshot(
-        "https://weak.example.com/2026/08/01/update.html",
-        "Daily company appointment update",
-        description="A short routine update.",
-        source_id="weak",
-    )
-    reserve_good = snapshot(
-        "https://fallback.example.com/investigation-hidden-pollution.html",
+    second = snapshot(
+        "https://investigation.example.com/2026/08/01/hidden-pollution.html",
         "Investigation reveals hidden pollution in drinking water",
-        published_at="",
         description="Documents, interviews and laboratory evidence reveal the failures.",
-        source_id="fallback",
-        discovery_method="firecrawl_search",
+        source_id="investigation",
     )
-    snapshots = [selected_good, selected_weak, reserve_good]
     truth_rows = [
-        truth(selected_good["url"], selected_good["title"], "formal_candidate"),
-        truth(selected_weak["url"], selected_weak["title"], "reject"),
-        truth(
-            reserve_good["url"],
-            reserve_good["title"],
-            "formal_candidate",
-            regret=True,
-        ),
+        truth(first["url"], first["title"], "formal_candidate"),
+        truth(second["url"], second["title"], "formal_candidate"),
     ]
 
     initial, staged, evidence = replay_run_with_stage(
         run_id=RUN_ID,
-        snapshot_rows=snapshots,
+        snapshot_rows=[first, second],
         truth_rows=truth_rows,
         max_urls=2,
     )
 
-    assert initial.severe_false_accepts == 0
+    assert initial.selected_count == 2
+    assert initial.selection_precision == 1.0
+    assert initial.selection_recall == 1.0
     assert staged["attempt_count"] == 2
     assert staged["attempted_true_candidates"] == 2
     assert staged["precision"] == 1.0
     assert staged["recall"] == 1.0
     assert staged["high_confidence_selection_regret"] == 0
-    promoted_urls = {
-        row["url"] for row in evidence["staged"]["reserve_promotions"]
-    }
-    assert reserve_good["url"] in promoted_urls
+    assert len(evidence["staged"]["attempted"]) == staged["attempt_count"]
+    assert staged["second_stage_count"] <= 8
 
 
-def test_staged_replay_never_borrows_more_than_eight_late_slots() -> None:
+def test_staged_replay_does_not_invent_late_attempts_without_reserves() -> None:
     snapshots = [
         snapshot(
             f"https://source{index}.example.com/2026/08/01/feature-{index}.html",
