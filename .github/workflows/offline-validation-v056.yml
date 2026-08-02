@@ -7,10 +7,13 @@ on:
       - 'src/longread_collector/offline_replay_v056.py'
       - 'src/longread_collector/offline_replay_sheet_adapter_v056.py'
       - 'src/longread_collector/final_recall_audit_v11.py'
+      - 'src/longread_collector/final_recall_audit_v11_runner.py'
+      - 'src/longread_collector/registry_matching_v056.py'
       - 'tests/test_offline_replay_v056.py'
       - 'tests/test_offline_replay_sheet_adapter_v056.py'
       - 'tests/test_offline_selector_debug_v056.py'
       - 'tests/test_final_recall_audit_v11.py'
+      - 'tests/test_registry_matching_v056.py'
       - '.github/workflows/offline-validation-v056.yml'
 
 permissions:
@@ -34,6 +37,7 @@ jobs:
             tests/test_offline_replay_sheet_adapter_v056.py \
             tests/test_offline_selector_debug_v056.py \
             tests/test_final_recall_audit_v11.py \
+            tests/test_registry_matching_v056.py \
             tests/test_operational_audit_v056.py
       - name: Prepare Google credentials
         env:
@@ -75,7 +79,7 @@ jobs:
           TIMEZONE: Asia/Shanghai
         run: |
           for attempt in 1 2 3; do
-            if python -m longread_collector.final_recall_audit_v11 \
+            if python -m longread_collector.final_recall_audit_v11_runner \
               --report-date 2026-08-02 \
               --cutoff-time 07:35 \
               --lookback-hours 48; then
