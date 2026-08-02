@@ -134,7 +134,7 @@ def test_freshness_tracks_are_conservative() -> None:
     )
 
 
-def test_unknown_date_is_deferred_for_native_and_structured_candidates() -> None:
+def test_unknown_date_is_deferred_only_with_structure_and_depth() -> None:
     native_article = item(
         "https://example.com/articles/unknown-date.html",
         "A reported article without date metadata",
@@ -143,28 +143,41 @@ def test_unknown_date_is_deferred_for_native_and_structured_candidates() -> None
     pre = evaluate_freshness_policy(native_article, phase="prefilter", now=NOW)
     post = evaluate_freshness_policy(native_article, phase="post_extraction", now=NOW)
     assert pre.allowed is True
-    assert pre.track == "ordinary_unknown_native"
-    assert pre.exception_reason == "registered_candidate_pending_body_date"
+    assert pre.track == "ordinary_unknown_native_structured"
+    assert pre.exception_reason == (
+        "registered_structured_candidate_pending_body_date"
+    )
     assert post.allowed is True
-    assert post.exception_reason == "registered_article_without_resolved_date"
+    assert post.exception_reason == (
+        "registered_structured_article_without_resolved_date"
+    )
     assert native_article.metadata["freshness"]["unknown_date_policy"] == (
         "defer_with_penalty"
     )
 
-    open_structured = item(
+    open_deep = item(
         "https://economicsobservatory.com/how-geopolitical-risks-affect-economy",
         "How are geopolitical risks affecting the world economy?",
     )
-    open_pre = evaluate_freshness_policy(
-        open_structured, phase="prefilter", now=NOW
-    )
+    open_pre = evaluate_freshness_policy(open_deep, phase="prefilter", now=NOW)
     assert open_pre.allowed is True
-    assert open_pre.track == "ordinary_unknown_open_structured"
-    assert open_pre.score_penalty < pre.score_penalty
+    assert open_pre.track == "ordinary_unknown_open_deep"
+    assert open_pre.score_penalty == -8
+
+    structured_but_shallow = item(
+        "https://example.com/articles/general-update.html",
+        "General information update",
+    )
+    shallow = evaluate_freshness_policy(
+        structured_but_shallow, phase="prefilter", now=NOW
+    )
+    assert shallow.allowed is False
+    assert shallow.reject_reason == "freshness_unknown_insufficient_evidence"
 
     unstructured = item(
         "https://example.com/about",
         "General information",
+        native=True,
     )
     rejected = evaluate_freshness_policy(unstructured, phase="prefilter", now=NOW)
     assert rejected.allowed is False
@@ -184,7 +197,11 @@ def test_unknown_special_documents_cover_reports_chapters_and_academic_hosts() -
         "https://iopscience.iop.org/article/10.1088/2634-4505/acbc95",
         "A journal article on environmental systems",
     )
-    for candidate in (cfr, chapter, iop):
+    un_desa = item(
+        "https://www.un.org/zh/desa/global-economic-governance",
+        "强化全球经济治理的诸多方法",
+    )
+    for candidate in (cfr, chapter, iop, un_desa):
         decision = evaluate_freshness_policy(candidate, now=NOW)
         assert decision.allowed is True
         assert decision.track == "special_document"
