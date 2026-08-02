@@ -8,6 +8,12 @@ on:
       - 'src/longread_collector/native_discovery_smoke.py'
       - 'src/longread_collector/known_source_fixes.py'
       - 'src/longread_collector/known_source_fixes_smoke.py'
+      - 'src/longread_collector/effective_route_v056.py'
+      - 'src/longread_collector/effective_route_extensions_v056.py'
+      - 'src/longread_collector/effective_route_smoke_v056.py'
+      - 'src/longread_collector/pipeline_v056a.py'
+      - 'src/longread_collector/pipeline_v055.py'
+      - 'src/longread_collector/pipeline_v054.py'
       - 'src/longread_collector/operational_hotfix.py'
       - 'src/longread_collector/pipeline_v05.py'
       - 'src/longread_collector/pipeline_v051.py'
@@ -16,6 +22,8 @@ on:
       - 'requirements.txt'
       - 'tests/test_native_discovery_v05.py'
       - 'tests/test_known_source_fixes.py'
+      - 'tests/test_effective_route_v056.py'
+      - 'tests/test_effective_route_extensions_v056.py'
       - 'tests/test_operational_hotfix_v053.py'
       - '.github/workflows/native-discovery-v05.yml'
 
@@ -38,6 +46,8 @@ jobs:
           pytest -q \
             tests/test_native_discovery_v05.py \
             tests/test_known_source_fixes.py \
+            tests/test_effective_route_v056.py \
+            tests/test_effective_route_extensions_v056.py \
             tests/test_operational_hotfix_v053.py \
             tests/test_source_registry_v1.py
       - name: Prepare Google credentials
@@ -73,6 +83,16 @@ jobs:
         run: |
           python -m longread_collector.known_source_fixes_smoke \
             --output-json artifacts/known-source-fixes-smoke.json
+      - name: Effective route recall smoke
+        env:
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          GOOGLE_SHEET_ID: 1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4
+          GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
+          TIMEZONE: Asia/Shanghai
+        run: |
+          python -m longread_collector.effective_route_smoke_v056 \
+            --minimum-target-recall 1.0 \
+            --output-json artifacts/effective-route-v056-smoke.json
       - name: Upload native discovery evidence
         if: always()
         uses: actions/upload-artifact@v4
