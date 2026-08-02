@@ -38,10 +38,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: production-sheet-smoke-${{ github.repository }}
-  cancel-in-progress: false
-
 jobs:
   validate-native-discovery:
     runs-on: ubuntu-latest
