@@ -90,10 +90,6 @@ def test_second_stage_uses_same_source_reserve_before_deferred_open() -> None:
     first, deferred = split_first_stage(accepted, max_attempts=32)
     assert len(first) == 24
     assert len(deferred) == 8
-    assert all(
-        item.metadata["selection"]["selection_bucket"] == "open"
-        for item in deferred
-    )
 
     failed = next(
         item
@@ -111,14 +107,60 @@ def test_second_stage_uses_same_source_reserve_before_deferred_open() -> None:
 
     assert len(decision.second_stage) == 8
     assert len(first) + len(decision.second_stage) == 32
-    assert len(decision.promoted_reserves) == 1
-    promoted = decision.promoted_reserves[0]
+    promoted_same_group = [
+        item
+        for item in decision.promoted_reserves
+        if item.metadata["selection"].get("selection_phase")
+        == "same_group_failure_replacement"
+    ]
+    assert len(promoted_same_group) == 1
+    promoted = promoted_same_group[0]
     assert promoted.metadata["selection"]["selection_group"] == "source:bjnews"
     assert promoted.metadata["selection"]["reserve_promoted"] is True
     assert promoted.metadata["selection"]["reserve_replacement_for"] == canonicalize_url(
         failed.url
     )
-    assert len(decision.deferred_not_extracted) == 1
+    assert len(decision.deferred_not_extracted) >= 1
+
+
+def test_high_quality_forced_reserve_can_displace_deferred_without_failure() -> None:
+    clear_selection_plan()
+    forced = open_item(99)
+    forced.title = "Investigation reveals hidden pollution in drinking water"
+    forced.description = (
+        "A reported investigation based on documents, interviews and laboratory evidence."
+    )
+    forced.metadata.setdefault("selection", {}).update(
+        {
+            "selection_force_reserve_only": True,
+            "reserve_only_reason": "evidence_requires_body_verification",
+        }
+    )
+    discovered = discovered_fixture() + [forced]
+    accepted, _ = filter_discovered(discovered, max_urls=32, max_per_domain=2)
+    plan = current_selection_plan()
+    assert plan is not None
+    assert forced in plan.reserves
+
+    first, deferred = split_first_stage(accepted, max_attempts=32)
+    decision = build_second_stage(
+        plan=plan,
+        first_stage=first,
+        deferred=deferred,
+        first_articles=[article(item) for item in first],
+        max_attempts=32,
+    )
+
+    assert forced in decision.second_stage
+    assert forced in decision.promoted_reserves
+    selection = forced.metadata["selection"]
+    assert selection["selection_phase"] == "editorial_reserve_promotion"
+    assert selection["reserve_replacement_reason"] == (
+        "higher_editorial_priority_than_deferred"
+    )
+    assert selection["replacement_score_delta"] > 0
+    assert selection["reserve_replacement_for"]
+    assert decision.deferred_not_extracted
 
 
 class FakePipeline(NativeCollectorPipeline):
@@ -160,6 +202,13 @@ def test_pipeline_replacement_stays_within_32_attempts() -> None:
         for item in accepted
         if item.metadata.get("selection", {}).get("reserve_promoted")
     ]
-    assert len(promoted) == 1
-    assert promoted[0].metadata["selection"]["selection_group"] == "source:bjnews"
-    assert canonicalize_url(promoted[0].url) in pipeline.batches[1]
+    assert promoted
+    same_group = [
+        item
+        for item in promoted
+        if item.metadata["selection"].get("selection_phase")
+        == "same_group_failure_replacement"
+    ]
+    assert len(same_group) == 1
+    assert same_group[0].metadata["selection"]["selection_group"] == "source:bjnews"
+    assert canonicalize_url(same_group[0].url) in pipeline.batches[1]

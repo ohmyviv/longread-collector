@@ -1,4 +1,4 @@
-"""Bounded two-stage reserve allocation for collector v0.5.6 PR-B."""
+"""Bounded two-stage reserve allocation for collector v0.5.6g."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from .ranked_selection_v056 import (
 from .selection_plan_v056 import SelectionReservePlan
 
 RESERVE_STAGE_SLOTS = 8
+SECOND_STAGE_MIN_EDITORIAL_PRIORITY = 41
 
 
 @dataclass(slots=True)
@@ -47,15 +48,40 @@ def _score(item: DiscoveredURL) -> tuple[int, ...]:
     selection = _selection(item)
     components = selection.get("score_components", {})
     return (
-        1 if _bucket(item) == "native" else 0,
+        int(components.get("editorial_priority", 0)),
         int(components.get("quality", 0)),
+        int(components.get("freshness_ordinal", 0)),
         int(components.get("article_confidence", 0)),
         int(components.get("depth", 0)),
-        int(components.get("freshness_ordinal", 0)),
         int(components.get("title_richness", 0)),
         int(components.get("description_richness", 0)),
+        1 if _bucket(item) == "native" else 0,
         int(components.get("rank_score", 0)),
     )
+
+
+def _priority(item: DiscoveredURL) -> int:
+    return int(
+        _selection(item).get("score_components", {}).get(
+            "editorial_priority", 0
+        )
+    )
+
+
+def _late_stage_eligible(item: DiscoveredURL) -> bool:
+    selection = _selection(item)
+    priority = _priority(item)
+    selection["second_stage_min_editorial_priority"] = (
+        SECOND_STAGE_MIN_EDITORIAL_PRIORITY
+    )
+    selection["second_stage_priority_delta"] = (
+        priority - SECOND_STAGE_MIN_EDITORIAL_PRIORITY
+    )
+    eligible = priority >= SECOND_STAGE_MIN_EDITORIAL_PRIORITY
+    selection["second_stage_eligible"] = eligible
+    if not eligible and selection.get("selection_status") != "selected":
+        selection["late_stage_skip_reason"] = "below_second_stage_editorial_priority"
+    return eligible
 
 
 def article_is_usable(article: ExtractedArticle) -> bool:
@@ -71,34 +97,28 @@ def split_first_stage(
     max_attempts: int,
     reserve_slots: int = RESERVE_STAGE_SLOTS,
 ) -> tuple[list[DiscoveredURL], list[DiscoveredURL]]:
-    """Defer the lowest-ranked open items while preserving native first-pass recall."""
+    """Run up to 24 highest-utility items first and reserve eight attempts."""
     bounded = list(selected[: max(0, max_attempts)])
-    defer_count = min(max(0, reserve_slots), len(bounded))
-    if defer_count == 0:
-        return bounded, []
-
-    # Prefer deferring low-ranked open-search candidates. If there are fewer
-    # than reserve_slots open items, defer the lowest-ranked remaining items.
-    defer_order = sorted(
+    first_capacity = max(0, int(max_attempts) - max(0, int(reserve_slots)))
+    ranked = sorted(
         bounded,
         key=lambda item: (
-            0 if _bucket(item) == "open" else 1,
             _score(item),
-            int(_selection(item).get("selected_order", 0)),
+            -int(_selection(item).get("selected_order", 0)),
         ),
+        reverse=True,
     )
-    deferred_urls = {
-        canonicalize_url(item.url) for item in defer_order[:defer_count]
-    }
-    first = [
-        item for item in bounded if canonicalize_url(item.url) not in deferred_urls
-    ]
-    deferred = [
-        item for item in bounded if canonicalize_url(item.url) in deferred_urls
-    ]
-    deferred.sort(
-        key=lambda item: int(_selection(item).get("selected_order", 0))
-    )
+    first_count = min(first_capacity, len(ranked))
+    first = ranked[:first_count]
+    deferred = ranked[first_count:]
+    for order, item in enumerate(first, start=1):
+        selection = _selection(item)
+        selection["selection_phase"] = "first_stage_editorial_priority"
+        selection["first_stage_priority_order"] = order
+    for order, item in enumerate(deferred, start=1):
+        selection = _selection(item)
+        selection["selection_phase"] = "second_stage_competition"
+        selection["deferred_priority_order"] = order
     return first, deferred
 
 
@@ -143,11 +163,24 @@ def _schedule(
         return False
     attempted.add(canonical)
     second_stage.append(item)
-    # Reserve capacity pessimistically: a successful extraction must remain
-    # within source/domain and absolute host caps.
     group_counts[_group(item)] += 1
     host_counts[domain_from_url(item.url)] += 1
     return True
+
+
+def _promote(
+    item: DiscoveredURL,
+    *,
+    phase: str,
+    promoted: list[DiscoveredURL],
+) -> None:
+    promoted.append(item)
+    selection = _selection(item)
+    selection["selection_status"] = "reserve_promoted"
+    selection["reserve_promoted"] = True
+    selection["selection_phase"] = phase
+    selection["capacity_backfill"] = True
+    selection["reserve_editorial_priority"] = _priority(item)
 
 
 def build_second_stage(
@@ -158,7 +191,10 @@ def build_second_stage(
     first_articles: list[ExtractedArticle],
     max_attempts: int,
 ) -> StagedReserveDecision:
-    remaining_slots = max(0, max_attempts - len(first_stage))
+    remaining_slots = min(
+        RESERVE_STAGE_SLOTS,
+        max(0, int(max_attempts) - len(first_stage)),
+    )
     second_stage: list[DiscoveredURL] = []
     promoted: list[DiscoveredURL] = []
     attempted = {canonicalize_url(item.url) for item in first_stage}
@@ -169,9 +205,9 @@ def build_second_stage(
         if not article_is_usable(article)
     ]
     reserves = list(plan.reserves)
+    for item in deferred + reserves:
+        _late_stage_eligible(item)
 
-    # First use same-source/domain reserve for failed or rejected first-stage
-    # items. This turns source cap overflow into a genuine replacement pool.
     for failed in failures:
         if len(second_stage) >= remaining_slots:
             break
@@ -180,6 +216,7 @@ def build_second_stage(
                 item
                 for item in reserves
                 if _group(item) == _group(failed)
+                and _late_stage_eligible(item)
                 and _can_schedule(
                     item, group_counts=group_counts, host_counts=host_counts
                 )
@@ -197,44 +234,47 @@ def build_second_stage(
             attempted=attempted,
         ):
             reserves.remove(replacement)
-            promoted.append(replacement)
+            _promote(
+                replacement,
+                phase="same_group_failure_replacement",
+                promoted=promoted,
+            )
             selection = _selection(replacement)
-            selection["selection_status"] = "reserve_promoted"
-            selection["reserve_promoted"] = True
             selection["reserve_replacement_for"] = canonicalize_url(failed.url)
-            selection["selection_phase"] = "same_group_failure_replacement"
-            selection["capacity_backfill"] = True
+            selection["reserve_replacement_reason"] = "failed_first_stage"
 
-    # Preserve the original Top-32 decision for all remaining slots.
-    for item in deferred:
+    deferred_urls = {canonicalize_url(item.url) for item in deferred}
+    reserve_urls = {canonicalize_url(item.url) for item in reserves}
+    candidate_pool = [
+        item for item in list(deferred) + list(reserves) if _late_stage_eligible(item)
+    ]
+    candidate_pool.sort(key=_score, reverse=True)
+    for item in candidate_pool:
         if len(second_stage) >= remaining_slots:
             break
-        _schedule(
-            item,
-            second_stage=second_stage,
-            group_counts=group_counts,
-            host_counts=host_counts,
-            attempted=attempted,
-        )
-
-    # If cap changes caused a deferred item to be displaced, use the best
-    # remaining reserve while preserving final source/domain diversity.
-    for item in reserves:
-        if len(second_stage) >= remaining_slots:
-            break
-        if _schedule(
+        if not _schedule(
             item,
             second_stage=second_stage,
             group_counts=group_counts,
             host_counts=host_counts,
             attempted=attempted,
         ):
-            promoted.append(item)
-            selection = _selection(item)
-            selection["selection_status"] = "reserve_promoted"
-            selection["reserve_promoted"] = True
-            selection["selection_phase"] = "unused_slot_reserve_backfill"
-            selection["capacity_backfill"] = True
+            continue
+        canonical = canonicalize_url(item.url)
+        selection = _selection(item)
+        if canonical in reserve_urls:
+            _promote(
+                item,
+                phase="editorial_reserve_promotion",
+                promoted=promoted,
+            )
+            selection["reserve_replacement_reason"] = (
+                "higher_editorial_priority_than_deferred"
+            )
+        elif canonical in deferred_urls:
+            selection["selection_status"] = "deferred_revalidated"
+            selection["selection_phase"] = "deferred_top32_revalidated"
+            selection["second_stage_editorial_priority"] = _priority(item)
 
     actual_urls = {
         canonicalize_url(item.url) for item in first_stage + second_stage
@@ -244,11 +284,34 @@ def build_second_stage(
         for item in deferred
         if canonicalize_url(item.url) not in actual_urls
     ]
+    deferred_not_extracted.sort(key=_score)
     for item in deferred_not_extracted:
         selection = _selection(item)
         selection.pop("selected_order", None)
         selection["selection_status"] = "deferred_not_extracted"
-        selection["reserve_reason"] = "replaced_within_body_cap"
+        selection["reserve_reason"] = "outscored_in_second_stage"
+        selection["displaced_editorial_priority"] = _priority(item)
+
+    quality_promotions = [
+        item
+        for item in promoted
+        if _selection(item).get("selection_phase") == "editorial_reserve_promotion"
+    ]
+    for promoted_item, displaced in zip(
+        sorted(quality_promotions, key=_score, reverse=True),
+        deferred_not_extracted,
+    ):
+        promoted_selection = _selection(promoted_item)
+        promoted_selection["reserve_replacement_for"] = canonicalize_url(
+            displaced.url
+        )
+        promoted_selection["displaced_editorial_priority"] = _priority(displaced)
+        promoted_selection["replacement_score_delta"] = (
+            _priority(promoted_item) - _priority(displaced)
+        )
+        _selection(displaced)["replaced_by_reserve_url"] = canonicalize_url(
+            promoted_item.url
+        )
 
     for order, item in enumerate(first_stage + second_stage, start=1):
         selection = _selection(item)
@@ -266,6 +329,7 @@ def build_second_stage(
 
 __all__ = [
     "RESERVE_STAGE_SLOTS",
+    "SECOND_STAGE_MIN_EDITORIAL_PRIORITY",
     "StagedReserveDecision",
     "article_is_usable",
     "build_second_stage",

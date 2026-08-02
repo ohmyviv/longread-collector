@@ -16,6 +16,7 @@ _RESERVE_STATUSES = {
     "absolute_host_reserve",
     "final_not_selected",
     "evidence_reserve_only",
+    "editorial_priority_reserve",
 }
 
 
@@ -32,17 +33,19 @@ _PLAN: ContextVar[SelectionReservePlan | None] = ContextVar(
 
 
 def _score_key(item: DiscoveredURL) -> tuple[Any, ...]:
+    """Order reserves by editorial utility; native provenance is only a tie-break."""
     selection = item.metadata.get("selection", {})
     components = selection.get("score_components", {})
     bucket = str(selection.get("selection_bucket", "open"))
     return (
-        1 if bucket == "native" else 0,
+        int(components.get("editorial_priority", 0)),
         int(components.get("quality", 0)),
+        int(components.get("freshness_ordinal", 0)),
         int(components.get("article_confidence", 0)),
         int(components.get("depth", 0)),
-        int(components.get("freshness_ordinal", 0)),
         int(components.get("title_richness", 0)),
         int(components.get("description_richness", 0)),
+        1 if bucket == "native" else 0,
         int(components.get("rank_score", 0)),
     )
 
@@ -62,6 +65,8 @@ def publish_selection_plan(
         in _RESERVE_STATUSES
     ]
     reserves.sort(key=_score_key, reverse=True)
+    for index, item in enumerate(reserves, start=1):
+        item.metadata.setdefault("selection", {})["global_reserve_rank"] = index
     plan = SelectionReservePlan(
         max_urls=max(0, int(max_urls)),
         selected=list(selected),
