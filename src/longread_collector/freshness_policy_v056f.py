@@ -27,6 +27,7 @@ FRESHNESS_POLICY_VERSION = "freshness-policy-v0.5.6f-route-text"
 FreshnessPolicyDecision = _base.FreshnessPolicyDecision
 _BASE_EVALUATE = _base.evaluate_freshness_policy
 _BASE_RESOLVE = _base.resolve_publication_evidence
+_BASE_IS_SPECIAL = _base.is_special_document
 
 _FALLBACK_DEPTH_RE = re.compile(
     r"(?:暗访|调查报道|独家调查|深度调查|深度解析|深度报道|特稿|追踪报道|"
@@ -198,7 +199,7 @@ def resolve_publication_evidence(item: DiscoveredURL) -> dict[str, Any]:
 
 
 def is_special_document(item: DiscoveredURL) -> bool:
-    return _base.is_special_document(item) or _government_resource(item)
+    return _BASE_IS_SPECIAL(item) or _government_resource(item)
 
 
 # Make runners that import the base module after this module see the refined
