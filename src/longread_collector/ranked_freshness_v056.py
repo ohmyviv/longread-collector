@@ -16,7 +16,7 @@ from .freshness_policy_v056f import evaluate_freshness_policy
 from .models import DiscoveredURL
 from .ranked_selection_v055 import _score as _legacy_score
 
-RANKING_FRESHNESS_VERSION = "editorial-resolved-ranking-v0.5.6g3"
+RANKING_FRESHNESS_VERSION = "editorial-resolved-ranking-v0.5.6g4"
 
 _STRONG_REPORTING_RE = re.compile(
     r"(?:暗访|起底|实测|调查报道|独家调查|深度调查|深度报道|特稿|专访|"
@@ -30,7 +30,17 @@ _STRONG_REPORTING_RE = re.compile(
 _INTERPRETIVE_RE = re.compile(
     r"\b(?:should|finally|implications?|consequences?|outlook|dividend|"
     r"humbling|breakthrough|break through|beyond lithium|senate hearing|"
-    r"capitol hill|public health)\b|(?:意味着|启示|影响几何|何去何从)",
+    r"capitol hill|public health|return to capitol hill)\b|"
+    r"(?:意味着|启示|影响几何|何去何从)",
+    re.I,
+)
+_PROFILE_RE = re.compile(
+    r"(?:逝者|人物特稿|人物志|口述史)|\b(?:obituary|profile|portrait of)\b",
+    re.I,
+)
+_MARKET_COMMENTARY_RE = re.compile(
+    r"\b(?:humbling times for markets?|market reckoning|markets? face|"
+    r"investors? confront|market outlook)\b|(?:市场反思|市场变局|投资者面对)",
     re.I,
 )
 _FEATURE_PATH_RE = re.compile(
@@ -40,7 +50,7 @@ _FEATURE_PATH_RE = re.compile(
     re.I,
 )
 _PREMIUM_COMMENTARY_PATH_RE = re.compile(
-    r"/(?:critics-notebook|open-questions)(?:/|$)", re.I
+    r"/(?:critics-notebook|open-questions|the-weekend-essay)(?:/|$)", re.I
 )
 _POLICY_REPORT_RE = re.compile(
     r"/(?:task-force-reports?|major-reports?|policy-reports?)(?:/|$)|"
@@ -52,6 +62,9 @@ _LOW_VALUE_FORMAT_RE = re.compile(
     r"\b(?:podcast|audio edition|newsletter|behind the blog|weekly roundup|"
     r"press release|webinar|event recap)\b|(?:播客节目|音频版|每周简报|新闻发布会)",
     re.I,
+)
+_ACTUAL_FORMAT_PATH_RE = re.compile(
+    r"/(?:podcasts?|audio|newsletters?|digest)(?:/|$)", re.I
 )
 _SERVICE_OR_ARCHIVE_RE = re.compile(
     r"/(?:jobs?|careers?|how-to-write-for)(?:/|$)|"
@@ -67,10 +80,16 @@ _SPECIAL_MATERIAL_RE = re.compile(
     r"(?:论文导读|学术论文|研究论文|期刊论文)",
     re.I,
 )
+_ACADEMIC_LANDING_RE = re.compile(
+    r"(?:researchgate\.net|sciencedirect\.com|academic\.oup\.com|"
+    r"iopscience\.iop\.org|link\.springer\.com|mdpi\.com)|"
+    r"/(?:article|abstract)/\d|/science/article/pii/",
+    re.I,
+)
 _GENERIC_OVERVIEW_RE = re.compile(
     r"\b(?:overview|primer|roadmap|introduction|basics|high-level summary|"
-    r"what is (?:an? )?|evidence and causes|comprehensive review|"
-    r"recent advances|evolution of|history of)\b|"
+    r"what is (?:an? )?|evidence and causes|comprehensive(?: review)?|"
+    r"recent advances|evolution of|history of|revolutionizing industries worldwide)\b|"
     r"(?:研究中心|行业研究|新闻动态|蓝皮书发布会|报告发布会|基本情况|入门指南|"
     r"历史演进.{0,8}理论创新|现实挑战)",
     re.I,
@@ -84,6 +103,7 @@ _COMMERCIAL_RE = re.compile(
     re.I,
 )
 _BOOK_REVIEW_RE = re.compile(r"\bbook review\b|(?:书评|新书评介)", re.I)
+_MOJIBAKE_RE = re.compile(r"(?:�|Ã.|Â.|â€|â€™|â€œ|â€|ï¿½|Ð.|Ñ.)")
 _PLACEHOLDER_TITLE_RE = re.compile(
     r"^(?:read more|learn more|click here|untitled|news|article|新闻动态|详情)$",
     re.I,
@@ -142,9 +162,12 @@ def _editorial_components(
     if _FEATURE_PATH_RE.search(path):
         reporting_signal += 8
     if _PREMIUM_COMMENTARY_PATH_RE.search(path):
-        reporting_signal += 4
+        reporting_signal += 6
     if "/article/" in path.lower() or "/news/" in path.lower():
         reporting_signal += 2
+
+    profile_signal = 20 if _PROFILE_RE.search(sample) else 0
+    market_commentary_signal = 5 if _MARKET_COMMENTARY_RE.search(sample) else 0
     policy_report_signal = 14 if _POLICY_REPORT_RE.search(sample) else 0
 
     special_track = str(
@@ -156,18 +179,34 @@ def _editorial_components(
         sample, special=special_material
     )
 
-    generic_overview_penalty = -16 if _GENERIC_OVERVIEW_RE.search(sample) else 0
-    commercial_penalty = -30 if _COMMERCIAL_RE.search(sample) else 0
-    book_review_penalty = -20 if _BOOK_REVIEW_RE.search(sample) else 0
+    generic_overview_penalty = -18 if _GENERIC_OVERVIEW_RE.search(sample) else 0
+    commercial_penalty = -32 if _COMMERCIAL_RE.search(sample) else 0
+    book_review_penalty = -32 if _BOOK_REVIEW_RE.search(sample) else 0
     low_value_format_penalty = -14 if _LOW_VALUE_FORMAT_RE.search(sample) else 0
-    service_or_archive_penalty = -24 if _SERVICE_OR_ARCHIVE_RE.search(sample) else 0
+    # An article can discuss newsletters, podcasts or audio without being that
+    # format. Strong reporting/interpretive evidence plus a normal article path
+    # protects the article; actual format routes remain penalized.
+    if (
+        low_value_format_penalty
+        and not _ACTUAL_FORMAT_PATH_RE.search(path)
+        and (reporting_signal > 0 or profile_signal > 0 or market_commentary_signal > 0)
+    ):
+        low_value_format_penalty = 0
+
+    service_or_archive_penalty = -32 if _SERVICE_OR_ARCHIVE_RE.search(sample) else 0
     if "archives." in parts.netloc.lower() or "/archives/" in path.lower():
-        service_or_archive_penalty = min(service_or_archive_penalty, -18)
+        service_or_archive_penalty = min(service_or_archive_penalty, -22)
+    academic_landing_penalty = (
+        -18
+        if _ACADEMIC_LANDING_RE.search(sample) and not policy_report_signal
+        else 0
+    )
     if _DIGEST_PATH_RE.search(path):
         low_value_format_penalty = min(low_value_format_penalty, -8)
+    mojibake_penalty = -40 if _MOJIBAKE_RE.search(f"{title}\n{description}") else 0
     placeholder_title_penalty = -12 if _PLACEHOLDER_TITLE_RE.fullmatch(title) else 0
     bare_report_penalty = (
-        -10
+        -24
         if _BARE_REPORT_RE.search(title)
         and (path.lower().endswith(".pdf") or len(description) < 40)
         else 0
@@ -177,6 +216,8 @@ def _editorial_components(
         50
         + native_signal
         + reporting_signal
+        + profile_signal
+        + market_commentary_signal
         + policy_report_signal
         + int(components.get("quality", 0)) * 4
         + min(int(components.get("article_confidence", 0)), 8)
@@ -188,6 +229,8 @@ def _editorial_components(
         + book_review_penalty
         + low_value_format_penalty
         + service_or_archive_penalty
+        + academic_landing_penalty
+        + mojibake_penalty
         + placeholder_title_penalty
         + bare_report_penalty
     )
@@ -195,6 +238,8 @@ def _editorial_components(
         "editorial_priority": editorial_priority,
         "native_signal": native_signal,
         "reporting_signal": reporting_signal,
+        "profile_signal": profile_signal,
+        "market_commentary_signal": market_commentary_signal,
         "policy_report_signal": policy_report_signal,
         "special_material_penalty": special_material_penalty,
         "bibliographic_year_penalty": bibliographic_year_penalty,
@@ -203,6 +248,8 @@ def _editorial_components(
         "book_review_penalty": book_review_penalty,
         "low_value_format_penalty": low_value_format_penalty,
         "service_or_archive_penalty": service_or_archive_penalty,
+        "academic_landing_penalty": academic_landing_penalty,
+        "mojibake_penalty": mojibake_penalty,
         "placeholder_title_penalty": placeholder_title_penalty,
         "bare_report_penalty": bare_report_penalty,
     }
