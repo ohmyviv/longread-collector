@@ -1,12 +1,14 @@
 """Route-aware v0.5.6f freshness refinements.
 
-This thin layer preserves the validated 3/7/14-day policy while adding two
-narrow evidence rules discovered by the labelled replay:
+This thin layer preserves the validated 3/7/14-day policy while adding narrow
+evidence rules discovered by the labelled replay:
 
 * native Firecrawl search fallback is lower-trust than RSS/section scans when
-  publication time is unknown;
+  publication time is unknown and is kept as reserve-only without strong depth;
 * explicit self-publication/republication years in the search snippet are
-  usable low-confidence publication evidence.
+  usable low-confidence publication evidence;
+* government guidance/resource pages use the independent special-document
+  freshness track.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from __future__ import annotations
 from dataclasses import asdict, replace
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit
 import re
 
 from . import freshness_policy_v056 as _base
@@ -33,6 +36,15 @@ _FALLBACK_DEPTH_RE = re.compile(
     r"^\s*(?:how|why)\b",
     re.I,
 )
+_GOV_RESOURCE_RE = re.compile(
+    r"(?:guidance|guidelines?|resources?|framework|advisory|issues?\s+and\s+challenges|"
+    r"privacy|artificial intelligence)|(?:指导|指引|资源|框架|监管|隐私|人工智能)",
+    re.I,
+)
+_GOV_PATH_RE = re.compile(
+    r"/(?:guidance|guidelines?|resources?|privacy|publications?|advice|policy)(?:/|$)",
+    re.I,
+)
 
 
 def _text_sample(item: DiscoveredURL) -> str:
@@ -49,6 +61,20 @@ def _native_search_fallback(item: DiscoveredURL) -> bool:
 
 def _strong_fallback_depth(item: DiscoveredURL) -> bool:
     return bool(_FALLBACK_DEPTH_RE.search(_text_sample(item)))
+
+
+def _government_resource(item: DiscoveredURL) -> bool:
+    parts = urlsplit(item.url)
+    domain = parts.netloc.lower().removeprefix("www.")
+    path = (parts.path or "/").lower()
+    government = (
+        domain.endswith((".gov", ".gov.cn", ".gov.au", ".gov.uk", ".gc.ca"))
+        or bool(re.search(r"\.gov\.[a-z]{2}$", domain, re.I))
+    )
+    if not government:
+        return False
+    sample = _text_sample(item)
+    return bool(_GOV_PATH_RE.search(path) or _GOV_RESOURCE_RE.search(sample))
 
 
 def _apply_explicit_text_year(item: DiscoveredURL) -> tuple[str, list[Any]]:
@@ -94,26 +120,56 @@ def evaluate_freshness_policy(
     freshness = item.metadata.setdefault("freshness", {})
     freshness["policy_version"] = FRESHNESS_POLICY_VERSION
 
+    if _government_resource(item):
+        decision = replace(
+            decision,
+            allowed=True,
+            reject_reason="",
+            track="special_document",
+            exception_reason="government_resource_track",
+            score_penalty=-2 if decision.unknown else 0,
+        )
+        freshness.update(
+            {
+                "decision_allowed": True,
+                "freshness_reject_reason": "",
+                "freshness_track": "special_document",
+                "freshness_exception_reason": "government_resource_track",
+                "freshness_score_penalty": decision.score_penalty,
+                "government_resource_track": True,
+                "unknown_date_policy": (
+                    "special_document" if decision.unknown else "known_date_special_document"
+                ),
+            }
+        )
+
     if decision.allowed and decision.unknown and _native_search_fallback(item):
         _, structure = _base._depth_and_structure(item)
         strong_depth = _strong_fallback_depth(item)
         if not (strong_depth and structure):
             decision = replace(
                 decision,
-                allowed=False,
-                reject_reason="freshness_unknown_native_fallback_insufficient_evidence",
-                track="ordinary_unknown_native_fallback",
-                exception_reason="",
+                allowed=True,
+                reject_reason="",
+                track="ordinary_unknown_native_fallback_reserve",
+                exception_reason="reserve_pending_body_date_and_quality",
                 score_penalty=-12,
+            )
+            selection = item.metadata.setdefault("selection", {})
+            selection.update(
+                {
+                    "selection_force_reserve_only": True,
+                    "reserve_only_reason": "unknown_native_search_fallback",
+                }
             )
             freshness.update(
                 {
-                    "decision_allowed": False,
-                    "freshness_reject_reason": decision.reject_reason,
+                    "decision_allowed": True,
+                    "freshness_reject_reason": "",
                     "freshness_track": decision.track,
-                    "freshness_exception_reason": "",
+                    "freshness_exception_reason": decision.exception_reason,
                     "freshness_score_penalty": decision.score_penalty,
-                    "unknown_date_policy": "hard_reject_native_search_fallback",
+                    "unknown_date_policy": "reserve_only_native_search_fallback",
                     "native_search_fallback": True,
                     "strong_fallback_depth": False,
                 }
@@ -141,15 +197,19 @@ def resolve_publication_evidence(item: DiscoveredURL) -> dict[str, Any]:
     return result
 
 
+def is_special_document(item: DiscoveredURL) -> bool:
+    return _base.is_special_document(item) or _government_resource(item)
+
+
 # Make runners that import the base module after this module see the refined
 # evaluator without duplicating the large validated implementation.
 _base.evaluate_freshness_policy = evaluate_freshness_policy
 _base.resolve_publication_evidence = resolve_publication_evidence
+_base.is_special_document = is_special_document
 
 begin_freshness_clock = _base.begin_freshness_clock
 current_freshness_time = _base.current_freshness_time
 end_freshness_clock = _base.end_freshness_clock
-is_special_document = _base.is_special_document
 
 __all__ = [
     "FRESHNESS_POLICY_VERSION",
