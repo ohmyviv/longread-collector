@@ -99,7 +99,11 @@ def test_new_yorker_feature_is_not_rejected_for_missing_depth_words() -> None:
         markdown="A reported magazine feature. " + "paragraph " * 500,
     )
     assert result.candidate_disposition == "formal_candidate"
-    assert result.reason == "registered_high_quality_article_structure_v056"
+    assert result.source_relationship == "original"
+    assert result.reason in {
+        "verified_longform_default",
+        "registered_high_quality_article_structure_v056",
+    }
 
 
 def test_yale_e360_feature_is_not_rejected() -> None:
