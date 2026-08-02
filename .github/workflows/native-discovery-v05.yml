@@ -26,10 +26,13 @@ on:
       - 'src/longread_collector/staged_reserve_v056.py'
       - 'src/longread_collector/prefilter_v056.py'
       - 'src/longread_collector/prefilter_v056c.py'
+      - 'src/longread_collector/operational_audit_v056.py'
+      - 'src/longread_collector/final_recall_audit_v11.py'
       - 'src/longread_collector/pipeline_v056a.py'
       - 'src/longread_collector/pipeline_v056b.py'
       - 'src/longread_collector/pipeline_v056c.py'
       - 'src/longread_collector/pipeline_v056d.py'
+      - 'src/longread_collector/pipeline_v056e.py'
       - 'src/longread_collector/pipeline_v055.py'
       - 'src/longread_collector/pipeline_v054.py'
       - 'src/longread_collector/operational_hotfix.py'
@@ -53,6 +56,8 @@ on:
       - 'tests/test_page_gate_policy_v056.py'
       - 'tests/test_post_extraction_gates_v056.py'
       - 'tests/test_operational_hotfix_v053.py'
+      - 'tests/test_operational_audit_v056.py'
+      - 'tests/test_final_recall_audit_v11.py'
       - '.github/workflows/native-discovery-v05.yml'
 
 permissions:
@@ -69,7 +74,7 @@ jobs:
           python-version: '3.12'
           cache: pip
       - run: pip install . pytest
-      - name: Native discovery, classification, selection and gate tests
+      - name: Native discovery, classification, selection and audit tests
         run: |
           pytest -q \
             tests/test_native_discovery_v05.py \
@@ -87,6 +92,8 @@ jobs:
             tests/test_page_gate_policy_v056.py \
             tests/test_post_extraction_gates_v056.py \
             tests/test_operational_hotfix_v053.py \
+            tests/test_operational_audit_v056.py \
+            tests/test_final_recall_audit_v11.py \
             tests/test_source_registry_v1.py
       - name: Prepare Google credentials
         env:
