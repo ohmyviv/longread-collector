@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import asdict, replace
 from datetime import datetime
 from typing import Any
+import re
 
 from . import freshness_policy_v056 as _base
 from .models import DiscoveredURL
@@ -23,6 +24,15 @@ FRESHNESS_POLICY_VERSION = "freshness-policy-v0.5.6f-route-text"
 FreshnessPolicyDecision = _base.FreshnessPolicyDecision
 _BASE_EVALUATE = _base.evaluate_freshness_policy
 _BASE_RESOLVE = _base.resolve_publication_evidence
+
+_FALLBACK_DEPTH_RE = re.compile(
+    r"(?:暗访|调查报道|独家调查|深度调查|深度解析|深度报道|特稿|追踪报道|"
+    r"产业链调查|内幕调查|揭秘|专访|访谈)|"
+    r"\b(?:inside|in[- ]depth|longform|feature|analysis|explainer)\b|"
+    r"\binvestigation\s+(?:reveals?|finds?|into|uncovers?)\b|"
+    r"^\s*(?:how|why)\b",
+    re.I,
+)
 
 
 def _text_sample(item: DiscoveredURL) -> str:
@@ -35,6 +45,10 @@ def _native_search_fallback(item: DiscoveredURL) -> bool:
     method = str(item.discovery_method or "").strip().lower()
     native_method = str(item.metadata.get("native_method", "")).strip().lower()
     return method == "firecrawl_search" or native_method == "firecrawl_search"
+
+
+def _strong_fallback_depth(item: DiscoveredURL) -> bool:
+    return bool(_FALLBACK_DEPTH_RE.search(_text_sample(item)))
 
 
 def _apply_explicit_text_year(item: DiscoveredURL) -> tuple[str, list[Any]]:
@@ -81,8 +95,9 @@ def evaluate_freshness_policy(
     freshness["policy_version"] = FRESHNESS_POLICY_VERSION
 
     if decision.allowed and decision.unknown and _native_search_fallback(item):
-        depth, structure = _base._depth_and_structure(item)
-        if not (depth and structure):
+        _, structure = _base._depth_and_structure(item)
+        strong_depth = _strong_fallback_depth(item)
+        if not (strong_depth and structure):
             decision = replace(
                 decision,
                 allowed=False,
@@ -100,12 +115,14 @@ def evaluate_freshness_policy(
                     "freshness_score_penalty": decision.score_penalty,
                     "unknown_date_policy": "hard_reject_native_search_fallback",
                     "native_search_fallback": True,
+                    "strong_fallback_depth": False,
                 }
             )
         else:
             freshness.update(
                 {
                     "native_search_fallback": True,
+                    "strong_fallback_depth": True,
                     "unknown_date_policy": "defer_deep_native_search_fallback",
                 }
             )
