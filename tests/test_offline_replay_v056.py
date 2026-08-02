@@ -110,7 +110,7 @@ def test_replay_applies_gates_and_selects_true_candidates() -> None:
 
     assert metrics.discovered_rows == 4
     assert metrics.labelled_rows == 4
-    assert metrics.selected_count == 2
+    assert metrics.selected_count == 2, evidence
     assert metrics.selected_true_candidates == 2
     assert metrics.selection_precision == 1.0
     assert metrics.selection_recall == 1.0
@@ -151,7 +151,7 @@ def test_replay_counts_high_confidence_missed_candidate() -> None:
         truth_rows=truth_rows,
         max_urls=1,
     )
-    assert metrics.selected_count == 1
+    assert metrics.selected_count == 1, evidence
     assert metrics.truth_candidates == 2
     assert metrics.selection_recall == 0.5
     assert metrics.high_confidence_selection_regret == 1
