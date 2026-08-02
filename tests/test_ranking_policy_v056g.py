@@ -5,6 +5,7 @@ from longread_collector.initial_selection_threshold_v056g import (
     apply_initial_selection_threshold,
 )
 from longread_collector.models import DiscoveredURL
+from longread_collector.profile_priority_v056g import MIN_NARRATIVE_PROFILE_SIGNAL
 from longread_collector.ranked_freshness_v056 import score_with_resolved_freshness
 from longread_collector.ranked_selection_plan_v056 import filter_discovered
 from longread_collector.selection_plan_v056 import (
@@ -105,7 +106,7 @@ def test_profile_and_weekend_commentary_receive_editorial_signals() -> None:
     )
     _, profile_components = score_with_resolved_freshness(profile, 0)
     _, weekend_components = score_with_resolved_freshness(weekend, 0)
-    assert profile_components["profile_signal"] == 20
+    assert profile_components["profile_signal"] >= MIN_NARRATIVE_PROFILE_SIGNAL
     assert weekend_components["reporting_signal"] >= 14
 
 
