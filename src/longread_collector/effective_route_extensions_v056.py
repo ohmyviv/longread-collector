@@ -38,9 +38,11 @@ BJNEWS_EFFECTIVE_ROUTES = [
     "https://www.bjnews.com.cn/news",
     "https://www.bjnews.com.cn/",
 ]
+# Live GitHub-runner validation found official pages 1-31 reachable; page 32+
+# return 405. Keep the route bounded to the verified range.
 BJNEWS_NEWS_PAGES = [
     "https://www.bjnews.com.cn/news",
-    *[f"https://www.bjnews.com.cn/news/{page}.html" for page in range(2, 65)],
+    *[f"https://www.bjnews.com.cn/news/{page}.html" for page in range(2, 32)],
 ]
 BJNEWS_DETAIL_TIMESTAMP_RE = re.compile(r"detail[-/](\d{13})\d*")
 BJNEWS_DEPTH_TITLE_RE = re.compile(
@@ -140,6 +142,13 @@ def merge_route_items(groups: list[list[Any]], *, limit: int) -> list[Any]:
 
 
 def _bjnews_published_at(url: str) -> datetime | None:
+    """Recover an approximate article-record creation time from BJNews IDs.
+
+    The 13-digit prefix is useful for bounded freshness filtering, but live
+    article pages show that it can precede the displayed publication time. It
+    must therefore remain medium-confidence evidence and must not be presented
+    as the exact publication timestamp.
+    """
     match = BJNEWS_DETAIL_TIMESTAMP_RE.search(url)
     if not match:
         return None
@@ -205,8 +214,8 @@ async def _discover_bjnews(
         attempts.append(attempt)
         filtered: list[Any] = []
         for item in parsed:
-            published = _bjnews_published_at(item.url)
-            if published is None or published.timestamp() < cutoff_timestamp:
+            observed = _bjnews_published_at(item.url)
+            if observed is None or observed.timestamp() < cutoff_timestamp:
                 continue
             # The dedicated depth page is already curated. General news pages
             # retain only titles with long-read/editorial-depth evidence.
@@ -214,11 +223,17 @@ async def _discover_bjnews(
                 item.title
             ):
                 continue
-            item.published_at = published.isoformat(sep=" ")
+            # Populate the sortable time field for seven-day route auditing,
+            # while explicitly preserving its approximate semantics in metadata.
+            item.published_at = observed.isoformat(sep=" ")
             item.metadata.update(
                 {
-                    "published_at_source": "bjnews_url_epoch_ms",
-                    "published_at_confidence": "high",
+                    "published_at_source": "bjnews_article_id_epoch_ms_approx",
+                    "published_at_confidence": "medium",
+                    "published_at_note": (
+                        "article ID time can precede displayed publication; "
+                        "use only for bounded freshness filtering"
+                    ),
                     "source_page": endpoint,
                 }
             )
