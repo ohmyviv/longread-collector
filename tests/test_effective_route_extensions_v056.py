@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from longread_collector.effective_route_extensions_v056 import (
     BJNEWS_EFFECTIVE_ROUTES,
     JIEMIAN_EFFECTIVE_ROUTES,
@@ -5,7 +7,6 @@ from longread_collector.effective_route_extensions_v056 import (
     apply_effective_route_fix,
     merge_route_items,
 )
-from longread_collector.models import SearchResult
 
 
 def source(source_id: str):
@@ -25,16 +26,9 @@ def source(source_id: str):
     }
 
 
-def result(source_id: str, suffix: str, rank: int) -> SearchResult:
-    return SearchResult(
-        query_id=f"source:{source_id}",
-        group="native_source",
-        purpose="native_source_scan",
+def result(source_id: str, suffix: str, rank: int):
+    return SimpleNamespace(
         url=f"https://example.com/article/{suffix}",
-        title=f"Article {suffix}",
-        description="",
-        published_at="",
-        language="zh",
         rank=rank,
         metadata={"source_id": source_id},
     )
