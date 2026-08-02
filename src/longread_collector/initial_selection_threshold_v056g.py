@@ -1,8 +1,9 @@
-"""Apply a soft editorial-confidence threshold to the initial Top 32.
+"""Apply a soft editorial-confidence threshold to a contested initial Top 32.
 
-Candidates below the threshold remain fully auditable reserves.  Vacated slots
-are backfilled from higher-scoring capacity reserves while preserving the
-existing source/domain/host caps.
+Candidates below the threshold remain fully auditable reserves. Vacated slots
+are backfilled from higher-scoring capacity reserves while preserving existing
+source/domain/host caps. When capacity is not contested, the threshold is not
+applied so special documents keep their independent-track semantics.
 """
 
 from __future__ import annotations
@@ -72,9 +73,21 @@ def apply_initial_selection_threshold(
     selected: list[DiscoveredURL],
     max_urls: int,
 ) -> list[DiscoveredURL]:
+    capacity = max(0, int(max_urls))
+    # This is a competition rule, not a new content gate. If ranking did not
+    # fill the available capacity, retain the independent special-document and
+    # ordinary candidate semantics unchanged.
+    if capacity == 0 or len(selected) < capacity:
+        for order, item in enumerate(sorted(selected, key=_score, reverse=True), start=1):
+            selection = _selection(item)
+            selection["initial_selection_threshold_applied"] = False
+            selection["selected_order"] = order
+        return sorted(selected, key=_score, reverse=True)
+
     retained: list[DiscoveredURL] = []
     for item in selected:
         selection = _selection(item)
+        selection["initial_selection_threshold_applied"] = True
         selection["initial_selection_min_editorial_priority"] = (
             INITIAL_SELECTION_MIN_EDITORIAL_PRIORITY
         )
@@ -102,7 +115,7 @@ def apply_initial_selection_threshold(
     backfill.sort(key=_score, reverse=True)
 
     for item in backfill:
-        if len(retained) >= max(0, int(max_urls)):
+        if len(retained) >= capacity:
             break
         group = _group(item)
         host = domain_from_url(item.url)
@@ -120,6 +133,7 @@ def apply_initial_selection_threshold(
         selection["selection_status"] = "selected"
         selection["selection_phase"] = "editorial_threshold_backfill"
         selection["capacity_backfill"] = True
+        selection["initial_selection_threshold_applied"] = True
         selection["initial_selection_min_editorial_priority"] = (
             INITIAL_SELECTION_MIN_EDITORIAL_PRIORITY
         )
