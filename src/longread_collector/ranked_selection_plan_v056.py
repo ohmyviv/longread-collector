@@ -13,8 +13,8 @@ from .ranked_selection_v056 import (
 )
 from .selection_plan_v056 import publish_selection_plan
 
-# Install the resolved-publication score adapter while preserving the validated
-# PR-B reserve allocator.
+# Install the resolved-publication and editorial score adapter while preserving
+# the reserve allocator's hard source/domain/host caps.
 _ranked_freshness.install_ranked_freshness()
 
 
@@ -36,7 +36,12 @@ def _annotate_forced_reserve(item: DiscoveredURL, original_index: int) -> None:
             "selection_group": (
                 f"source:{source_id or domain}" if native else f"domain:{domain}"
             ),
-            "ranking_score_total": sum(components.values()),
+            "ranking_score_total": int(
+                components.get("editorial_priority", sum(components.values()))
+            ),
+            "editorial_priority_score": int(
+                components.get("editorial_priority", 0)
+            ),
             "score_components": components,
             "page_type_score": (
                 components.get("quality", 0)
@@ -44,8 +49,11 @@ def _annotate_forced_reserve(item: DiscoveredURL, original_index: int) -> None:
             ),
             "freshness_score": components.get("freshness_ordinal", 0),
             "depth_score": components.get("depth", 0),
-            "source_quality_score": 2 if native else 0,
+            "source_quality_score": components.get(
+                "native_signal", 2 if native else 0
+            ),
             "selection_force_reserve_only": True,
+            "forced_reserve_score": list(score),
         }
     )
 
