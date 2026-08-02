@@ -46,6 +46,11 @@ _EVENT_ACTION_RE = re.compile(
     r"(?:报名|议程|参会|举办|举行|召开|开幕)",
     re.I,
 )
+_NEGATED_EVENT_ACTION_RE = re.compile(
+    r"\b(?:no|without)\s+(?:registration|agenda|tickets?)"
+    r"(?:\s+or\s+(?:event\s+)?(?:registration|agenda|tickets?))*\b",
+    re.I,
+)
 _INSTITUTION_RE = re.compile(
     r"(?:研究中心|研究院|实验室|课题组|中心简介|机构简介)$|"
     r"\b(?:research center|research centre|institute|laboratory|lab)\b$",
@@ -95,7 +100,11 @@ def evaluate_page_gate(item: DiscoveredURL) -> PageGateDecision:
     domain, path = _domain_path(item)
     title = str(item.title or "").strip()
     sample = _sample(item)
-    lowered = sample.lower()
+
+    # Preserve the long-standing invariant that a host root is a homepage,
+    # before an unknown-date policy has a chance to classify it generically.
+    if path in {"", "/"}:
+        return PageGateDecision("homepage", "homepage", "root_path")
 
     if _PRESS_PATH_RE.search(path) or re.search(r"^press release\s*[:–-]", title, re.I):
         return PageGateDecision("press_release", "press_release", "url_or_title")
@@ -131,10 +140,11 @@ def evaluate_page_gate(item: DiscoveredURL) -> PageGateDecision:
     if _PUBLIC_NOTICE_RE.search(title):
         return PageGateDecision("award_or_public_notice", "award_or_public_notice", "title")
 
+    event_action_sample = _NEGATED_EVENT_ACTION_RE.sub("", sample)
     if (
         re.search(r"/(?:events?|conference|webinars?)(?:/|$)", path, re.I)
         or _EVENT_RE.search(title)
-    ) and _EVENT_ACTION_RE.search(sample):
+    ) and _EVENT_ACTION_RE.search(event_action_sample):
         return PageGateDecision(
             "event_or_release_announcement", "event_or_release_announcement", "event_signals"
         )
@@ -157,8 +167,18 @@ def evaluate_page_gate(item: DiscoveredURL) -> PageGateDecision:
             "category_or_channel_page", "category_or_channel_page", "generic_title_shallow_path"
         )
 
+    explicit_program_path = re.search(
+        r"/(?:programs?|courses?|degrees?|majors?|admissions?|areas-of-study)(?:/|$)",
+        path,
+        re.I,
+    )
+    nested_study_path = re.search(
+        r"/(?:undergraduate|graduate)/(?:areas-of-study|programs?|degrees?|majors?)(?:/|$)",
+        path,
+        re.I,
+    )
     if (
-        re.search(r"/(?:programs?|courses?|degrees?|majors?|admissions?)(?:/|$)", path, re.I)
+        (explicit_program_path or nested_study_path)
         and not re.search(r"/(?:news|article|story|research)/", path, re.I)
     ) or _PROGRAM_RE.search(title):
         return PageGateDecision(
