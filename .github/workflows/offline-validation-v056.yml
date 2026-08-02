@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - 'src/longread_collector/freshness_policy_v056.py'
+      - 'src/longread_collector/supplemental_date_evidence_v056f.py'
       - 'src/longread_collector/page_gate_policy_v056.py'
       - 'src/longread_collector/ranked_freshness_v056.py'
       - 'src/longread_collector/ranked_selection_v056.py'
@@ -14,6 +15,7 @@ on:
       - 'src/longread_collector/final_recall_audit_v11_runner.py'
       - 'src/longread_collector/registry_matching_v056.py'
       - 'tests/test_freshness_policy_v056.py'
+      - 'tests/test_supplemental_date_evidence_v056f.py'
       - 'tests/test_offline_replay_v056.py'
       - 'tests/test_offline_replay_sheet_adapter_v056.py'
       - 'tests/test_offline_selector_debug_v056.py'
@@ -43,6 +45,7 @@ jobs:
         run: |
           pytest -q \
             tests/test_freshness_policy_v056.py \
+            tests/test_supplemental_date_evidence_v056f.py \
             tests/test_offline_replay_v056.py \
             tests/test_offline_replay_sheet_adapter_v056.py \
             tests/test_offline_selector_debug_v056.py \
