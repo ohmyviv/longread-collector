@@ -4,11 +4,16 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - 'src/longread_collector/freshness_policy_v056.py'
+      - 'src/longread_collector/page_gate_policy_v056.py'
+      - 'src/longread_collector/ranked_freshness_v056.py'
+      - 'src/longread_collector/ranked_selection_v056.py'
       - 'src/longread_collector/offline_replay_v056.py'
       - 'src/longread_collector/offline_replay_sheet_adapter_v056.py'
       - 'src/longread_collector/final_recall_audit_v11.py'
       - 'src/longread_collector/final_recall_audit_v11_runner.py'
       - 'src/longread_collector/registry_matching_v056.py'
+      - 'tests/test_freshness_policy_v056.py'
       - 'tests/test_offline_replay_v056.py'
       - 'tests/test_offline_replay_sheet_adapter_v056.py'
       - 'tests/test_offline_selector_debug_v056.py'
@@ -37,6 +42,7 @@ jobs:
       - name: Offline replay unit tests
         run: |
           pytest -q \
+            tests/test_freshness_policy_v056.py \
             tests/test_offline_replay_v056.py \
             tests/test_offline_replay_sheet_adapter_v056.py \
             tests/test_offline_selector_debug_v056.py \
