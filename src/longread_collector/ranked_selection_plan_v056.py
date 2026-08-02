@@ -19,6 +19,38 @@ from .selection_plan_v056 import publish_selection_plan
 _ranked_freshness.install_ranked_freshness()
 
 
+def _unknown_native_search_fallback(item: DiscoveredURL) -> bool:
+    if str(item.metadata.get("purpose", "")) != "native_source_scan":
+        return False
+    method = str(item.discovery_method or "").strip().lower()
+    native_method = str(item.metadata.get("native_method", "")).strip().lower()
+    if method != "firecrawl_search" and native_method != "firecrawl_search":
+        return False
+    if str(item.published_at or "").strip():
+        return False
+    freshness = item.metadata.get("freshness", {})
+    if freshness.get("published_at_resolved"):
+        return False
+    return bool(
+        freshness.get("native_search_fallback")
+        or freshness.get("freshness_unknown")
+        or freshness.get("unknown_date_policy")
+    )
+
+
+def _force_low_trust_fallback_reserve(item: DiscoveredURL) -> None:
+    if not _unknown_native_search_fallback(item):
+        return
+    selection = item.metadata.setdefault("selection", {})
+    selection.update(
+        {
+            "selection_force_reserve_only": True,
+            "reserve_only_reason": "unknown_native_search_fallback",
+            "initial_trust_boundary": "reserve_pending_body_date_and_quality",
+        }
+    )
+
+
 def _annotate_forced_reserve(item: DiscoveredURL, original_index: int) -> None:
     score, components = _ranked._score(item, original_index)
     native = str(item.metadata.get("purpose", "")) == "native_source_scan"
@@ -67,6 +99,7 @@ def filter_discovered(
 ) -> tuple[list[DiscoveredURL], list[dict[str, str]]]:
     selectable: list[DiscoveredURL] = []
     for original_index, item in enumerate(discovered):
+        _force_low_trust_fallback_reserve(item)
         if bool(
             item.metadata.get("selection", {}).get("selection_force_reserve_only")
         ):
