@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .models import DiscoveredURL
-from .ranked_selection_v056 import (
+from .ranked_selection_v056c import (
     OPEN_DOMAIN_CAP,
     filter_discovered as _ranked_filter_discovered,
 )
