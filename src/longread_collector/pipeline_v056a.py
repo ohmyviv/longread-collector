@@ -7,7 +7,7 @@ from typing import Any
 
 from . import pipeline_v05 as _pipeline_v05
 from . import pipeline_v055 as _pipeline_v055
-from .effective_route_v056 import (
+from .effective_route_extensions_v056 import (
     EFFECTIVE_ROUTE_VERSION,
     EffectiveRouteDiscovery,
     begin_effective_route_audit,
