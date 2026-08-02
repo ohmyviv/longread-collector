@@ -25,12 +25,13 @@ _NOW: ContextVar[datetime | None] = ContextVar("freshness_now_v056", default=Non
 
 _DEPTH_RE = re.compile(
     r"(?:深度|调查|特稿|专访|访谈|解析|长文|追踪|in[- ]depth|investigation|"
-    r"long\s*read|longform|feature|analysis|interview|explainer)",
+    r"long\s*read|longform|feature|analysis|interview|explainer)|"
+    r"^\s*(?:how|why|what)\b",
     re.I,
 )
 _ARTICLE_PATH_RE = re.compile(
     r"/(?:article|articles|story|stories|feature|features|analysis|investigation|"
-    r"long-read|longread|news|detail|content|issue)/|\.s?html?$",
+    r"long-read|longread|news|detail|content|issue|p|c)/|\.s?html?$",
     re.I,
 )
 _SPECIAL_PATH_RE = re.compile(
@@ -128,6 +129,8 @@ def _special_document(item: DiscoveredURL) -> bool:
     if _ACADEMIC_DOMAIN_RE.search(domain) and not re.search(
         r"/(?:news|blog|opinion|podcast|events?)/", path, re.I
     ):
+        return True
+    if domain == "un.org" and "/desa/" in path:
         return True
     if _SPECIAL_TITLE_RE.search(sample):
         return True
@@ -230,48 +233,48 @@ def evaluate_freshness_policy(
             "independent_special_candidate_freshness",
             parsed is None,
             parsed.date().toordinal() if parsed else 0,
-            0,
+            -2 if parsed is None else 0,
             phase,
         )
     elif parsed is None:
         if phase == "prefilter":
-            if native:
+            if native and structure:
                 allowed = True
                 reason = ""
-                track = "ordinary_unknown_native"
-                exception = "registered_candidate_pending_body_date"
-                penalty = -3
-            elif structure:
+                track = "ordinary_unknown_native_structured"
+                exception = "registered_structured_candidate_pending_body_date"
+                penalty = -5 if depth else -8
+            elif (not native) and depth and structure:
                 allowed = True
                 reason = ""
-                track = "ordinary_unknown_open_structured"
-                exception = "structured_candidate_pending_body_date"
-                penalty = -7 if not depth else -5
+                track = "ordinary_unknown_open_deep"
+                exception = "deep_structured_candidate_pending_body_date"
+                penalty = -8
             else:
                 allowed = False
                 reason = "freshness_unknown_insufficient_evidence"
                 track = "ordinary_unknown"
                 exception = ""
-                penalty = -10
+                penalty = -12
         else:
-            if native and (structure or depth):
+            if native and structure:
                 allowed = True
                 reason = ""
                 track = "ordinary_unknown_native_post"
-                exception = "registered_article_without_resolved_date"
-                penalty = -5
-            elif depth and structure:
+                exception = "registered_structured_article_without_resolved_date"
+                penalty = -7 if depth else -10
+            elif (not native) and depth and structure:
                 allowed = True
                 reason = ""
                 track = "ordinary_unknown_open_deep_post"
                 exception = "deep_structured_article_without_resolved_date"
-                penalty = -7
+                penalty = -10
             else:
                 allowed = False
                 reason = "freshness_unknown_after_extraction"
                 track = "ordinary_unknown"
                 exception = ""
-                penalty = -10
+                penalty = -12
         decision = FreshnessPolicyDecision(
             allowed,
             reason,
