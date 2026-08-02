@@ -26,6 +26,22 @@ RESERVE_STATUSES = {
     "final_not_selected",
 }
 
+# Only reasons that can be established from URL/title/description alone may
+# reject a candidate before body extraction. Editorial-substance conclusions
+# such as ``insufficient_editorial_evidence`` require the extracted body and
+# are deliberately deferred to the post-extraction classifier.
+DISCOVERY_HARD_REJECT_REASONS = {
+    "spam_or_abused_upload",
+    "job_page",
+    "blocked_or_auth",
+    "homepage",
+    "social_promotion",
+    "social_not_standalone",
+    "listing_page",
+    "service_landing",
+    "reference_page",
+}
+
 
 @dataclass(slots=True)
 class Candidate:
@@ -47,6 +63,17 @@ def _is_native(item: DiscoveredURL) -> bool:
 
 def _selection(item: DiscoveredURL) -> dict[str, Any]:
     return item.metadata.setdefault("selection", {})
+
+
+def _discovery_hard_reject_reason(item: DiscoveredURL) -> str:
+    reason = discovery_reject_reason(item.url, item.title, item.description)
+    if not reason:
+        return ""
+    if reason in DISCOVERY_HARD_REJECT_REASONS:
+        return reason
+    _selection(item)["discovery_quality_deferred_reason"] = reason
+    _selection(item)["discovery_quality_decision"] = "defer_until_body_extraction"
+    return ""
 
 
 def _annotate(candidate: Candidate) -> None:
@@ -229,7 +256,7 @@ def filter_discovered(
             continue
         seen_urls.add(canonical)
 
-        reason = discovery_reject_reason(item.url, item.title, item.description)
+        reason = _discovery_hard_reject_reason(item)
         if reason:
             _selection(item).update(
                 {
@@ -341,6 +368,7 @@ def filter_discovered(
 
 __all__ = [
     "ABSOLUTE_HOST_CAP",
+    "DISCOVERY_HARD_REJECT_REASONS",
     "NATIVE_BUCKET_TARGET",
     "NATIVE_SOURCE_CAP",
     "OPEN_BUCKET_TARGET",
