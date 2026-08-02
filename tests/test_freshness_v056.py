@@ -8,7 +8,7 @@ from longread_collector.freshness_v056 import (
     resolve_publication_date,
 )
 from longread_collector.models import DiscoveredURL
-from longread_collector.prefilter_v056 import filter_discovered
+from longread_collector.prefilter_v056c import filter_discovered
 
 BJ = ZoneInfo("Asia/Shanghai")
 NOW = datetime(2026, 8, 2, 12, 0, tzinfo=BJ)
