@@ -16,6 +16,7 @@ from .ranked_selection_v056 import (
 from .selection_plan_v056 import SelectionReservePlan
 
 RESERVE_STAGE_SLOTS = 8
+SECOND_STAGE_MIN_EDITORIAL_PRIORITY = 41
 
 
 @dataclass(slots=True)
@@ -65,6 +66,22 @@ def _priority(item: DiscoveredURL) -> int:
             "editorial_priority", 0
         )
     )
+
+
+def _late_stage_eligible(item: DiscoveredURL) -> bool:
+    selection = _selection(item)
+    priority = _priority(item)
+    selection["second_stage_min_editorial_priority"] = (
+        SECOND_STAGE_MIN_EDITORIAL_PRIORITY
+    )
+    selection["second_stage_priority_delta"] = (
+        priority - SECOND_STAGE_MIN_EDITORIAL_PRIORITY
+    )
+    eligible = priority >= SECOND_STAGE_MIN_EDITORIAL_PRIORITY
+    selection["second_stage_eligible"] = eligible
+    if not eligible and selection.get("selection_status") != "selected":
+        selection["late_stage_skip_reason"] = "below_second_stage_editorial_priority"
+    return eligible
 
 
 def article_is_usable(article: ExtractedArticle) -> bool:
@@ -188,6 +205,8 @@ def build_second_stage(
         if not article_is_usable(article)
     ]
     reserves = list(plan.reserves)
+    for item in deferred + reserves:
+        _late_stage_eligible(item)
 
     for failed in failures:
         if len(second_stage) >= remaining_slots:
@@ -197,6 +216,7 @@ def build_second_stage(
                 item
                 for item in reserves
                 if _group(item) == _group(failed)
+                and _late_stage_eligible(item)
                 and _can_schedule(
                     item, group_counts=group_counts, host_counts=host_counts
                 )
@@ -225,7 +245,9 @@ def build_second_stage(
 
     deferred_urls = {canonicalize_url(item.url) for item in deferred}
     reserve_urls = {canonicalize_url(item.url) for item in reserves}
-    candidate_pool = list(deferred) + list(reserves)
+    candidate_pool = [
+        item for item in list(deferred) + list(reserves) if _late_stage_eligible(item)
+    ]
     candidate_pool.sort(key=_score, reverse=True)
     for item in candidate_pool:
         if len(second_stage) >= remaining_slots:
@@ -307,6 +329,7 @@ def build_second_stage(
 
 __all__ = [
     "RESERVE_STAGE_SLOTS",
+    "SECOND_STAGE_MIN_EDITORIAL_PRIORITY",
     "StagedReserveDecision",
     "article_is_usable",
     "build_second_stage",
