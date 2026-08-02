@@ -21,6 +21,8 @@ from .supplemental_date_evidence_v056f import supplemental_text_date_evidence
 
 FRESHNESS_POLICY_VERSION = "freshness-policy-v0.5.6f-route-text"
 FreshnessPolicyDecision = _base.FreshnessPolicyDecision
+_BASE_EVALUATE = _base.evaluate_freshness_policy
+_BASE_RESOLVE = _base.resolve_publication_evidence
 
 
 def _text_sample(item: DiscoveredURL) -> str:
@@ -37,7 +39,7 @@ def _native_search_fallback(item: DiscoveredURL) -> bool:
 
 def _apply_explicit_text_year(item: DiscoveredURL) -> tuple[str, list[Any]]:
     original = str(item.published_at or "")
-    initial = _base.resolve_publication_evidence(item)
+    initial = _BASE_RESOLVE(item)
     if initial.get("published_at_resolved"):
         return original, []
     evidence = supplemental_text_date_evidence(_text_sample(item))
@@ -70,7 +72,7 @@ def evaluate_freshness_policy(
 ) -> FreshnessPolicyDecision:
     original_published_at, text_evidence = _apply_explicit_text_year(item)
     try:
-        decision = _base.evaluate_freshness_policy(item, phase=phase, now=now)
+        decision = _BASE_EVALUATE(item, phase=phase, now=now)
     finally:
         item.published_at = original_published_at
 
@@ -78,11 +80,7 @@ def evaluate_freshness_policy(
     freshness = item.metadata.setdefault("freshness", {})
     freshness["policy_version"] = FRESHNESS_POLICY_VERSION
 
-    if (
-        decision.allowed
-        and decision.unknown
-        and _native_search_fallback(item)
-    ):
+    if decision.allowed and decision.unknown and _native_search_fallback(item):
         depth, structure = _base._depth_and_structure(item)
         if not (depth and structure):
             decision = replace(
@@ -117,7 +115,7 @@ def evaluate_freshness_policy(
 def resolve_publication_evidence(item: DiscoveredURL) -> dict[str, Any]:
     original_published_at, text_evidence = _apply_explicit_text_year(item)
     try:
-        result = _base.resolve_publication_evidence(item)
+        result = _BASE_RESOLVE(item)
     finally:
         item.published_at = original_published_at
     _record_text_evidence(item, text_evidence)
