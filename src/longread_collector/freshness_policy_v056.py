@@ -17,39 +17,56 @@ from .freshness_v056 import (
     parse_datetime,
 )
 from .models import DiscoveredURL
+from .supplemental_date_evidence_v056f import supplemental_url_date_evidence
 
 BJ = ZoneInfo("Asia/Shanghai")
-FRESHNESS_POLICY_VERSION = "freshness-policy-v0.5.6c"
+FRESHNESS_POLICY_VERSION = "freshness-policy-v0.5.6f"
 
 _NOW: ContextVar[datetime | None] = ContextVar("freshness_now_v056", default=None)
 
 _DEPTH_RE = re.compile(
     r"(?:深度|调查|特稿|专访|访谈|解析|长文|追踪|in[- ]depth|investigation|"
-    r"long\s*read|longform|feature|analysis|interview|explainer)",
+    r"long\s*read|longform|feature|analysis|interview|explainer)|"
+    r"^\s*(?:how|why|what)\b",
     re.I,
 )
 _ARTICLE_PATH_RE = re.compile(
     r"/(?:article|articles|story|stories|feature|features|analysis|investigation|"
-    r"long-read|longread|news|detail|content)/|\.s?html?$",
+    r"long-read|longread|news|detail|content|issue|p|c)/|\.s?html?$",
     re.I,
 )
 _SPECIAL_PATH_RE = re.compile(
     r"\.pdf$|/(?:doi|journals?|papers?|working-paper|white-paper|guidance|"
-    r"research-report|official-report|publications?)/",
+    r"research-report|official-report|task-force-reports?|publications?|"
+    r"publicaciones|chapters?|read)/",
     re.I,
 )
 _SPECIAL_TITLE_RE = re.compile(
     r"\b(?:research report|working paper|white paper|guidance document|"
-    r"journal article|systematic review|regulatory guidance|official report)\b|"
+    r"journal article|systematic review|regulatory guidance|official report|"
+    r"task force report)\b|"
     r"(?:研究报告|工作论文|指导文件|白皮书|学术论文|系统综述|监管指引|官方报告)",
     re.I,
 )
 _ACADEMIC_DOMAIN_RE = re.compile(
     r"(?:^|\.)(?:doi\.org|ncbi\.nlm\.nih\.gov|academic\.oup\.com|"
     r"sciencedirect\.com|tandfonline\.com|onlinelibrary\.wiley\.com|"
-    r"link\.springer\.com|jstor\.org)$",
+    r"link\.springer\.com|jstor\.org|iopscience\.iop\.org)$",
     re.I,
 )
+_GENERIC_SINGLE_SLUGS = {
+    "about",
+    "contact",
+    "home",
+    "services",
+    "privacy",
+    "terms",
+    "subscribe",
+    "newsletter",
+    "category",
+    "topics",
+    "search",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +117,16 @@ def _corrected_evidence(item: DiscoveredURL) -> list[DateEvidence]:
             )
         else:
             corrected.append(entry)
+
+    existing_dates = {
+        (entry.role, entry.value.date())
+        for entry in corrected
+    }
+    for entry in supplemental_url_date_evidence(item.url):
+        key = (entry.role, entry.value.date())
+        if key not in existing_dates:
+            corrected.append(entry)
+            existing_dates.add(key)
     return corrected
 
 
@@ -113,6 +140,8 @@ def _special_document(item: DiscoveredURL) -> bool:
     if _ACADEMIC_DOMAIN_RE.search(domain) and not re.search(
         r"/(?:news|blog|opinion|podcast|events?)/", path, re.I
     ):
+        return True
+    if domain == "un.org" and "/desa/" in path:
         return True
     if _SPECIAL_TITLE_RE.search(sample):
         return True
@@ -130,9 +159,18 @@ def _depth_and_structure(item: DiscoveredURL) -> tuple[bool, bool]:
     sample = f"{item.title or ''} {item.description or ''}"
     depth = bool(_DEPTH_RE.search(sample))
     path = urlsplit(item.url).path.lower()
-    structure = bool(_ARTICLE_PATH_RE.search(path)) or len(
-        [part for part in path.split("/") if part]
-    ) >= 3
+    parts = [part for part in path.split("/") if part]
+    single_slug_article = (
+        len(parts) == 1
+        and parts[0] not in _GENERIC_SINGLE_SLUGS
+        and len(parts[0]) >= 24
+        and parts[0].count("-") >= 3
+    )
+    structure = (
+        bool(_ARTICLE_PATH_RE.search(path))
+        or len(parts) >= 3
+        or single_slug_article
+    )
     return depth, structure
 
 
@@ -206,24 +244,52 @@ def evaluate_freshness_policy(
             "independent_special_candidate_freshness",
             parsed is None,
             parsed.date().toordinal() if parsed else 0,
-            0,
+            -2 if parsed is None else 0,
             phase,
         )
     elif parsed is None:
         if phase == "prefilter":
-            allowed = native and structure
-            reason = "" if allowed else "freshness_unknown_insufficient_evidence"
-            exception = "registered_article_pending_body_date" if allowed else ""
-            penalty = -2 if allowed else -8
+            if native and structure:
+                allowed = True
+                reason = ""
+                track = "ordinary_unknown_native_structured"
+                exception = "registered_structured_candidate_pending_body_date"
+                penalty = -5 if depth else -8
+            elif (not native) and depth and structure:
+                allowed = True
+                reason = ""
+                track = "ordinary_unknown_open_deep"
+                exception = "deep_structured_candidate_pending_body_date"
+                penalty = -8
+            else:
+                allowed = False
+                reason = "freshness_unknown_insufficient_evidence"
+                track = "ordinary_unknown"
+                exception = ""
+                penalty = -12
         else:
-            allowed = native and depth and structure
-            reason = "" if allowed else "freshness_unknown_after_extraction"
-            exception = "registered_deep_article_without_resolved_date" if allowed else ""
-            penalty = -4 if allowed else -10
+            if native and structure:
+                allowed = True
+                reason = ""
+                track = "ordinary_unknown_native_post"
+                exception = "registered_structured_article_without_resolved_date"
+                penalty = -7 if depth else -10
+            elif (not native) and depth and structure:
+                allowed = True
+                reason = ""
+                track = "ordinary_unknown_open_deep_post"
+                exception = "deep_structured_article_without_resolved_date"
+                penalty = -10
+            else:
+                allowed = False
+                reason = "freshness_unknown_after_extraction"
+                track = "ordinary_unknown"
+                exception = ""
+                penalty = -12
         decision = FreshnessPolicyDecision(
             allowed,
             reason,
-            "ordinary_unknown",
+            track,
             None,
             exception,
             True,
@@ -323,6 +389,9 @@ def evaluate_freshness_policy(
             "freshness_unknown": decision.unknown,
             "freshness_score_ordinal": decision.score_ordinal,
             "freshness_score_penalty": decision.score_penalty,
+            "unknown_date_policy": (
+                "defer_with_penalty" if decision.unknown and decision.allowed else "hard_reject"
+            ),
         }
     )
     return decision

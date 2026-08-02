@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from . import ranked_selection_v056 as _ranked
-from .freshness_policy_v056 import evaluate_freshness_policy
+from .freshness_policy_v056f import evaluate_freshness_policy
 from .models import DiscoveredURL
 from .ranked_selection_v055 import _score as _legacy_score
 
-RANKING_FRESHNESS_VERSION = "resolved-publication-ranking-v0.5.6c"
+RANKING_FRESHNESS_VERSION = "resolved-publication-ranking-v0.5.6f"
 
 
 def score_with_resolved_freshness(

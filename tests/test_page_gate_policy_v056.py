@@ -98,7 +98,7 @@ def test_confirmed_non_article_types_are_rejected(candidate, reason) -> None:
     decision = evaluate_page_gate_policy(candidate)
     assert decision.reject_reason == reason
     assert candidate.metadata["page_gate"]["policy_version"] == (
-        "page-gate-policy-v0.5.6c"
+        "page-gate-policy-v0.5.6f"
     )
 
 
@@ -133,11 +133,28 @@ def test_confirmed_non_article_types_are_rejected(candidate, reason) -> None:
             "https://news.example.com/article/inside-the-research-center.html",
             "Inside the Research Center That Tracks Emerging Viruses",
         ),
+        item(
+            "https://www.tmtpost.com/8036314.html",
+            "从深度报道到长访谈：媒体人重做播客的商业逻辑",
+            (
+                "文章分析社会调查、特稿记者和科技媒体主编如何把采访经验"
+                "转化为商业访谈产品，并讨论播客行业的商业模式。"
+            ),
+        ),
     ],
 )
 def test_articles_and_primary_documents_are_not_false_positive_rejects(candidate) -> None:
     decision = evaluate_page_gate_policy(candidate)
     assert decision.rejected is False
+
+
+def test_podcast_episode_route_remains_rejected() -> None:
+    episode = item(
+        "https://example.com/podcast/episode-42",
+        "Podcast: Episode 42",
+        "Listen to this week's audio programme.",
+    )
+    assert evaluate_page_gate_policy(episode).reject_reason == "podcast_page"
 
 
 def test_prefilter_records_page_gate_separately_from_capacity() -> None:

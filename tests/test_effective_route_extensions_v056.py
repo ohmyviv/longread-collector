@@ -14,6 +14,7 @@ from longread_collector.effective_route_extensions_v056 import (
     merge_route_items,
     truthful_route_metrics,
 )
+from longread_collector.effective_route_smoke_v056 import partition_target_urls
 
 
 def source(source_id: str):
@@ -96,6 +97,26 @@ def test_undated_section_route_is_partial_not_effective() -> None:
     assert metrics["native_route_status"] == "partial_native"
     assert metrics["effective_native_success"] is False
     assert metrics["oldest_item_at"] == ""
+
+
+def test_route_smoke_targets_follow_the_same_seven_day_window() -> None:
+    before_expiry, expired_before = partition_target_urls(
+        started=datetime(2026, 8, 2, 22, 23),
+        freshness_days=7,
+    )
+    target = "https://www.thepaper.cn/newsDetail_forward_33660139"
+    assert target in before_expiry["thepaper"]
+    assert target not in expired_before.get("thepaper", set())
+
+    after_expiry, expired_after = partition_target_urls(
+        started=datetime(2026, 8, 2, 22, 25),
+        freshness_days=7,
+    )
+    assert target not in after_expiry.get("thepaper", set())
+    assert target in expired_after["thepaper"]
+    assert "https://www.thepaper.cn/newsDetail_forward_33664738" in after_expiry[
+        "thepaper"
+    ]
 
 
 class FakeResponse:

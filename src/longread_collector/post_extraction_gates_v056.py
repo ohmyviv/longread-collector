@@ -6,11 +6,11 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
-from .freshness_policy_v056 import evaluate_freshness_policy
+from .freshness_policy_v056f import evaluate_freshness_policy
 from .models import DiscoveredURL, ExtractedArticle
 from .page_gate_policy_v056 import evaluate_page_gate_policy
 
-POST_EXTRACTION_GATE_VERSION = "post-extraction-gates-v0.5.6c"
+POST_EXTRACTION_GATE_VERSION = "post-extraction-gates-v0.5.6f"
 
 
 def _evaluation_item(
