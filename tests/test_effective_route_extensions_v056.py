@@ -59,12 +59,14 @@ def test_source_specific_route_contracts_are_bounded_and_ordered() -> None:
     ]
 
 
-def test_bjnews_article_id_restores_publication_time() -> None:
-    published = _bjnews_published_at(
+def test_bjnews_article_id_restores_approximate_creation_time() -> None:
+    observed = _bjnews_published_at(
         "https://www.bjnews.com.cn/detail/1785144458129453.html"
     )
-    assert published is not None
-    assert published.strftime("%Y-%m-%d %H:%M") == "2026-07-28 09:27"
+    assert observed is not None
+    # The ID timestamp predates the page's displayed publication time, so it is
+    # a medium-confidence creation/freshness signal rather than exact publish time.
+    assert observed.strftime("%Y-%m-%d %H:%M") == "2026-07-27 17:27"
 
 
 def test_high_volume_sources_use_declared_priority_not_round_robin() -> None:
