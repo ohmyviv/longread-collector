@@ -17,6 +17,7 @@ from .freshness_v056 import (
     parse_datetime,
 )
 from .models import DiscoveredURL
+from .supplemental_date_evidence_v056f import supplemental_url_date_evidence
 
 BJ = ZoneInfo("Asia/Shanghai")
 FRESHNESS_POLICY_VERSION = "freshness-policy-v0.5.6f"
@@ -116,6 +117,16 @@ def _corrected_evidence(item: DiscoveredURL) -> list[DateEvidence]:
             )
         else:
             corrected.append(entry)
+
+    existing_dates = {
+        (entry.role, entry.value.date())
+        for entry in corrected
+    }
+    for entry in supplemental_url_date_evidence(item.url):
+        key = (entry.role, entry.value.date())
+        if key not in existing_dates:
+            corrected.append(entry)
+            existing_dates.add(key)
     return corrected
 
 
