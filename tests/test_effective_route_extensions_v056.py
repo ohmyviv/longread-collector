@@ -2,8 +2,10 @@ from types import SimpleNamespace
 
 from longread_collector.effective_route_extensions_v056 import (
     BJNEWS_EFFECTIVE_ROUTES,
+    BJNEWS_NEWS_PAGES,
     JIEMIAN_EFFECTIVE_ROUTES,
     THEPAPER_EFFECTIVE_ROUTES,
+    _bjnews_published_at,
     apply_effective_route_fix,
     merge_route_items,
 )
@@ -45,12 +47,24 @@ def test_source_specific_route_contracts_are_bounded_and_ordered() -> None:
     assert bjnews["parser_config_json"]["section_urls"] == BJNEWS_EFFECTIVE_ROUTES
     assert bjnews["parser_config_json"]["metadata_limit"] == 64
     assert BJNEWS_EFFECTIVE_ROUTES[0].endswith("/depth")
+    assert len(BJNEWS_NEWS_PAGES) == 64
+    assert BJNEWS_NEWS_PAGES[-1].endswith("/64.html")
 
     thepaper = apply_effective_route_fix(source("thepaper"))
     assert thepaper["parser_config_json"]["section_urls"] == THEPAPER_EFFECTIVE_ROUTES
-    assert thepaper["parser_config_json"]["metadata_limit"] == 320
-    assert any("nodeids=25462&pageidx=8" in url for url in THEPAPER_EFFECTIVE_ROUTES)
-    assert any("nodeids=25448&pageidx=8" in url for url in THEPAPER_EFFECTIVE_ROUTES)
+    assert thepaper["parser_config_json"]["metadata_limit"] == 48
+    assert THEPAPER_EFFECTIVE_ROUTES == [
+        "https://www.thepaper.cn/list_25462",
+        "https://www.thepaper.cn/list_25448",
+    ]
+
+
+def test_bjnews_article_id_restores_publication_time() -> None:
+    published = _bjnews_published_at(
+        "https://www.bjnews.com.cn/detail/1785144458129453.html"
+    )
+    assert published is not None
+    assert published.strftime("%Y-%m-%d %H:%M") == "2026-07-28 09:27"
 
 
 def test_high_volume_sources_use_declared_priority_not_round_robin() -> None:
