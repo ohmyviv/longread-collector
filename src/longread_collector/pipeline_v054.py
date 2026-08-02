@@ -1,5 +1,5 @@
-"""Compatibility entrypoint forwarding shadow runs to v0.5.6 PR-C."""
+"""Compatibility entrypoint forwarding shadow runs to v0.5.6 PR-D."""
 
-from .pipeline_v056c import NativeCollectorPipeline
+from .pipeline_v056d import NativeCollectorPipeline
 
 __all__ = ["NativeCollectorPipeline"]
