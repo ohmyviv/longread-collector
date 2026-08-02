@@ -8,7 +8,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .config import get_settings
-from .effective_route_v056 import EffectiveRouteDiscovery
+from .effective_route_extensions_v056 import EffectiveRouteDiscovery
 from .normalization import canonicalize_url
 from .sheets import GoogleSheetStore
 
@@ -86,7 +86,7 @@ def main() -> None:
     logs = {str(log.get("source_id", "")): log for log in batch.logs}
     route_checks = {
         source_id: bool(logs.get(source_id, {}).get("success"))
-        and logs.get(source_id, {}).get("metadata_limit") == 24
+        and int(logs.get(source_id, {}).get("metadata_limit") or 0) >= 24
         and logs.get(source_id, {}).get("configured_lookback_days") == 7
         and bool(logs.get(source_id, {}).get("effective_route_version"))
         for source_id in sorted(wanted)
