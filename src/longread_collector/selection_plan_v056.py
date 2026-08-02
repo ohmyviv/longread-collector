@@ -15,6 +15,7 @@ _RESERVE_STATUSES = {
     "bucket_capacity_reserve",
     "absolute_host_reserve",
     "final_not_selected",
+    "evidence_reserve_only",
 }
 
 
