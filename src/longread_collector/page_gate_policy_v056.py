@@ -13,7 +13,7 @@ from .page_gates_v056 import (
     evaluate_page_gate as _base_evaluate_page_gate,
 )
 
-PAGE_GATE_POLICY_VERSION = "page-gate-policy-v0.5.6c"
+PAGE_GATE_POLICY_VERSION = "page-gate-policy-v0.5.6f"
 
 _ARTICLE_PATH_RE = re.compile(
     r"/(?:article|articles|news|story|stories|feature|features|analysis|"
@@ -52,6 +52,10 @@ _PROFILE_END_RE = re.compile(
     r"\b(?:research cent(?:er|re)|institute|laboratory|lab)\b$",
     re.I,
 )
+_PODCAST_EPISODE_RE = re.compile(
+    r"^(?:podcast|episode)\b|^(?:播客|音频节目)[:：]|第\s*\d+\s*期",
+    re.I,
+)
 
 
 def _guard(
@@ -80,6 +84,15 @@ def evaluate_page_gate_policy(item: DiscoveredURL) -> PageGateDecision:
     description = str(item.description or "").strip()
     sample = f"{title} {description}"
     article_path = bool(_ARTICLE_PATH_RE.search(path))
+
+    # An article may analyse podcast businesses or interview formats. Preserve
+    # substantial article routes unless the URL/title clearly represents an
+    # episode or audio programme itself.
+    if decision.page_type == "podcast_page" and article_path:
+        episode_path = bool(re.search(r"/(?:podcasts?|audio)(?:/|$)", path, re.I))
+        explicit_episode = bool(_PODCAST_EPISODE_RE.search(title))
+        if not episode_path and not explicit_episode and len(description) >= 80:
+            return _guard(item, decision, "reported_article_podcast_guard")
 
     # Reported articles can discuss a degree programme without being a course
     # landing page. Journalistic language on an article route takes priority.
