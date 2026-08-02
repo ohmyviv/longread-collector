@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from .models import DiscoveredURL
 from .prefilter_v055 import discovery_hard_gate_reason
-from .ranked_selection_v056 import filter_discovered as _reserve_filter_discovered
+from .ranked_selection_plan_v056 import (
+    filter_discovered as _reserve_filter_discovered,
+)
 
 PREFILTER_VERSION = "deterministic-prefilter-v0.5.6"
 
