@@ -14,7 +14,10 @@ on:
       - 'src/longread_collector/ranked_selection_v056.py'
       - 'src/longread_collector/ranked_selection_plan_v056.py'
       - 'src/longread_collector/selection_plan_v056.py'
+      - 'src/longread_collector/initial_selection_threshold_v056g.py'
+      - 'src/longread_collector/staged_reserve_v056.py'
       - 'src/longread_collector/offline_replay_v056.py'
+      - 'src/longread_collector/offline_replay_v056g.py'
       - 'src/longread_collector/offline_replay_sheet_adapter_v056.py'
       - 'src/longread_collector/offline_replay_v056f_runner.py'
       - 'src/longread_collector/final_recall_audit_v11.py'
@@ -26,10 +29,12 @@ on:
       - 'tests/test_page_gate_policy_v056.py'
       - 'tests/test_reserve_only_v056f.py'
       - 'tests/test_offline_replay_v056.py'
+      - 'tests/test_offline_replay_v056g.py'
       - 'tests/test_offline_replay_sheet_adapter_v056.py'
       - 'tests/test_offline_selector_debug_v056.py'
       - 'tests/test_final_recall_audit_v11.py'
       - 'tests/test_registry_matching_v056.py'
+      - 'tests/test_staged_reserve_v056.py'
       - '.github/workflows/offline-validation-v056.yml'
 
 permissions:
@@ -59,10 +64,12 @@ jobs:
             tests/test_page_gate_policy_v056.py \
             tests/test_reserve_only_v056f.py \
             tests/test_offline_replay_v056.py \
+            tests/test_offline_replay_v056g.py \
             tests/test_offline_replay_sheet_adapter_v056.py \
             tests/test_offline_selector_debug_v056.py \
             tests/test_final_recall_audit_v11.py \
             tests/test_registry_matching_v056.py \
+            tests/test_staged_reserve_v056.py \
             tests/test_operational_audit_v056.py
       - name: Prepare Google credentials
         env:
@@ -80,7 +87,7 @@ jobs:
           TIMEZONE: Asia/Shanghai
         run: |
           for attempt in 1 2 3; do
-            if python -m longread_collector.offline_replay_v056f_runner \
+            if python -m longread_collector.offline_replay_v056g \
               --run-id COL-20260801-190655-BJT-zh_evening \
               --run-id COL-20260801-233524-BJT-intl_early \
               --run-id COL-20260802-043748-BJT-pre_report \
