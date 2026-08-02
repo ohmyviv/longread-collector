@@ -193,6 +193,7 @@ def test_investigations_outrank_generic_items_within_source_cap() -> None:
     ]
     discovered = [native("curated", index) for index in range(1, 7)]
     for item, title in zip(discovered, titles, strict=True):
+        item.url = f"https://curated.example.com/2026/08/01/article-{item.rank}.html"
         item.title = title
         item.description = ""
     accepted, _ = filter_discovered(discovered, max_urls=4, max_per_domain=2)
