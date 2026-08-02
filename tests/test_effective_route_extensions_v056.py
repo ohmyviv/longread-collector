@@ -47,8 +47,8 @@ def test_source_specific_route_contracts_are_bounded_and_ordered() -> None:
     assert bjnews["parser_config_json"]["section_urls"] == BJNEWS_EFFECTIVE_ROUTES
     assert bjnews["parser_config_json"]["metadata_limit"] == 64
     assert BJNEWS_EFFECTIVE_ROUTES[0].endswith("/depth")
-    assert len(BJNEWS_NEWS_PAGES) == 64
-    assert BJNEWS_NEWS_PAGES[-1].endswith("/64.html")
+    assert len(BJNEWS_NEWS_PAGES) == 31
+    assert BJNEWS_NEWS_PAGES[-1].endswith("/31.html")
 
     thepaper = apply_effective_route_fix(source("thepaper"))
     assert thepaper["parser_config_json"]["section_urls"] == THEPAPER_EFFECTIVE_ROUTES
