@@ -169,10 +169,10 @@ def test_shallow_rss_is_aggregated_with_archive_and_audited() -> None:
                 return httpx.Response(200, text=archive)
             raise AssertionError(f"unexpected URL: {url}")
 
-    token = begin_effective_route_audit()
-    try:
-        batch = asyncio.run(
-            FixtureDiscovery(timeout=1, concurrency=1).discover(
+    async def run():
+        token = begin_effective_route_audit()
+        try:
+            batch = await FixtureDiscovery(timeout=1, concurrency=1).discover(
                 [
                     source(
                         "propublica",
@@ -184,10 +184,11 @@ def test_shallow_rss_is_aggregated_with_archive_and_audited() -> None:
                 started=started,
                 freshness_days=3,
             )
-        )
-        audit = current_effective_route_audit()
-    finally:
-        end_effective_route_audit(token)
+            return batch, current_effective_route_audit()
+        finally:
+            end_effective_route_audit(token)
+
+    batch, audit = asyncio.run(run())
 
     assert target in {item.url for item in batch.items}
     assert len(batch.items) == 8
