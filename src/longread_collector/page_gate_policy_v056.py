@@ -27,7 +27,8 @@ _EXPLICIT_PROGRAM_RE = re.compile(
     re.I,
 )
 _FORMAL_NOTICE_RE = re.compile(
-    r"^(?:关于.{0,60})?(?:公示|公告|推荐参评|拟推荐|获奖名单|结果公告|征集通知)[:：]?|"
+    r"^(?:关于.{0,80}(?:的)?(?:公示|公告|通知)|"
+    r"(?:公示|公告|通知)[:：\s]|推荐参评|拟推荐|获奖名单|结果公告|征集通知)|"
     r"^(?:award notice|public notice|call for nominations)\b",
     re.I,
 )
