@@ -52,6 +52,19 @@ _ACADEMIC_DOMAIN_RE = re.compile(
     r"link\.springer\.com|jstor\.org|iopscience\.iop\.org)$",
     re.I,
 )
+_GENERIC_SINGLE_SLUGS = {
+    "about",
+    "contact",
+    "home",
+    "services",
+    "privacy",
+    "terms",
+    "subscribe",
+    "newsletter",
+    "category",
+    "topics",
+    "search",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,9 +145,18 @@ def _depth_and_structure(item: DiscoveredURL) -> tuple[bool, bool]:
     sample = f"{item.title or ''} {item.description or ''}"
     depth = bool(_DEPTH_RE.search(sample))
     path = urlsplit(item.url).path.lower()
-    structure = bool(_ARTICLE_PATH_RE.search(path)) or len(
-        [part for part in path.split("/") if part]
-    ) >= 3
+    parts = [part for part in path.split("/") if part]
+    single_slug_article = (
+        len(parts) == 1
+        and parts[0] not in _GENERIC_SINGLE_SLUGS
+        and len(parts[0]) >= 24
+        and parts[0].count("-") >= 3
+    )
+    structure = (
+        bool(_ARTICLE_PATH_RE.search(path))
+        or len(parts) >= 3
+        or single_slug_article
+    )
     return depth, structure
 
 
