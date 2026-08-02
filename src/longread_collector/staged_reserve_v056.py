@@ -174,7 +174,10 @@ def build_second_stage(
     first_articles: list[ExtractedArticle],
     max_attempts: int,
 ) -> StagedReserveDecision:
-    remaining_slots = max(0, max_attempts - len(first_stage))
+    remaining_slots = min(
+        RESERVE_STAGE_SLOTS,
+        max(0, int(max_attempts) - len(first_stage)),
+    )
     second_stage: list[DiscoveredURL] = []
     promoted: list[DiscoveredURL] = []
     attempted = {canonicalize_url(item.url) for item in first_stage}
