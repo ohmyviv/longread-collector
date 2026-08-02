@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .freshness_policy_v056 import (
+from .freshness_policy_v056f import (
     FRESHNESS_POLICY_VERSION,
     evaluate_freshness_policy,
 )
@@ -16,7 +16,7 @@ from .ranked_selection_plan_v056 import (
     filter_discovered as _reserve_filter_discovered,
 )
 
-PREFILTER_VERSION = "page-freshness-prefilter-v0.5.6c"
+PREFILTER_VERSION = "page-freshness-prefilter-v0.5.6f"
 
 
 def _reject(
