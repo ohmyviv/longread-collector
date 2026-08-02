@@ -16,7 +16,9 @@ from .ranked_selection_v055 import (
     _score,
 )
 
-SELECTION_VERSION = "ranked-reserve-v0.5.6"
+SELECTION_VERSION = "quality-portfolio-reserve-v0.5.6g"
+OPEN_DIVERSITY_FLOOR = 8
+NATIVE_DIVERSITY_ROUNDS = 2
 
 RESERVE_STATUSES = {
     "source_initial_cap_reserve",
@@ -77,19 +79,29 @@ def _discovery_hard_reject_reason(item: DiscoveredURL) -> str:
 
 
 def _annotate(candidate: Candidate) -> None:
+    editorial_priority = int(
+        candidate.score_components.get(
+            "editorial_priority", sum(candidate.score_components.values())
+        )
+    )
     _selection(candidate.item).update(
         {
             "version": SELECTION_VERSION,
             "selection_bucket": candidate.bucket,
             "selection_group": candidate.group_key,
-            "ranking_score_total": sum(candidate.score_components.values()),
+            "ranking_score_total": editorial_priority,
+            "editorial_priority_score": editorial_priority,
             "page_type_score": (
                 candidate.score_components["quality"]
                 + candidate.score_components["article_confidence"]
             ),
             "freshness_score": candidate.score_components["freshness_ordinal"],
             "depth_score": candidate.score_components["depth"],
-            "source_quality_score": 2 if candidate.bucket == "native" else 0,
+            "source_quality_score": int(
+                candidate.score_components.get(
+                    "native_signal", 2 if candidate.bucket == "native" else 0
+                )
+            ),
             "score_components": candidate.score_components,
         }
     )
@@ -168,7 +180,6 @@ def _round_robin_select(
     target_total: int,
     max_rounds: int,
     phase_prefix: str,
-    backfill_after_round: int | None = None,
 ) -> None:
     for round_index in range(max_rounds):
         if len(accepted) >= target_total:
@@ -178,16 +189,11 @@ def _round_robin_select(
                 break
             if round_index >= len(eligible):
                 continue
-            candidate = eligible[round_index]
             _mark_selected(
-                candidate,
+                eligible[round_index],
                 accepted=accepted,
                 host_counts=host_counts,
                 phase=f"{phase_prefix}_{round_index + 1}",
-                backfill=(
-                    backfill_after_round is not None
-                    and round_index + 1 > backfill_after_round
-                ),
             )
 
 
@@ -204,13 +210,12 @@ def _remaining_eligible(
     return remaining
 
 
-def _score_backfill(
+def _quality_fill(
     candidates: list[Candidate],
     *,
     accepted: list[Candidate],
     host_counts: Counter[str],
     target_total: int,
-    phase: str,
 ) -> None:
     for candidate in candidates:
         if len(accepted) >= target_total:
@@ -219,7 +224,7 @@ def _score_backfill(
             candidate,
             accepted=accepted,
             host_counts=host_counts,
-            phase=phase,
+            phase="global_quality_fill",
             backfill=True,
         )
 
@@ -230,10 +235,13 @@ def filter_discovered(
     max_urls: int,
     max_per_domain: int = OPEN_DOMAIN_CAP,
 ) -> tuple[list[DiscoveredURL], list[dict[str, str]]]:
-    """Build a native-first 16/16 portfolio and preserve overflow as reserve.
+    """Build a diverse portfolio, then allocate remaining slots by quality.
 
-    The function never selects more than ``max_urls`` and never treats a source
-    or bucket capacity decision as a deterministic page rejection.
+    Sixteen native and sixteen open items are no longer hard quotas.  The first
+    two native rounds provide source diversity, eight open domains provide a
+    discovery floor, and every remaining slot is awarded globally by the
+    explainable editorial score.  Source/domain/host caps and the hard body
+    attempt limit remain unchanged.
     """
     max_urls = max(0, int(max_urls))
     open_cap = max(1, int(max_per_domain))
@@ -295,48 +303,40 @@ def filter_discovered(
     accepted: list[Candidate] = []
     host_counts: Counter[str] = Counter()
 
-    # Native gets its full soft target first: rounds 1–2 ensure diversity, then
-    # rounds 3–4 use source reserve before any open-search overflow.
+    # Curated source diversity: at most two early items from each native source,
+    # bounded by the historical 16-item soft target.
     native_target = min(max_urls, NATIVE_BUCKET_TARGET)
     _round_robin_select(
         native_prepared,
         accepted=accepted,
         host_counts=host_counts,
         target_total=native_target,
-        max_rounds=NATIVE_SOURCE_CAP,
-        phase_prefix="native_round",
-        backfill_after_round=2,
+        max_rounds=NATIVE_DIVERSITY_ROUNDS,
+        phase_prefix="native_diversity_round",
     )
 
-    # Open search receives its own soft target with a two-per-domain ceiling.
-    open_target_total = min(max_urls, len(accepted) + OPEN_BUCKET_TARGET)
+    # Open search remains represented, but weak special/overview results no
+    # longer receive an automatic sixteen slots.
+    open_floor_total = min(max_urls, len(accepted) + OPEN_DIVERSITY_FLOOR)
     _round_robin_select(
         open_prepared,
         accepted=accepted,
         host_counts=host_counts,
-        target_total=open_target_total,
-        max_rounds=open_cap,
-        phase_prefix="open_round",
+        target_total=open_floor_total,
+        max_rounds=1,
+        phase_prefix="open_diversity_round",
     )
 
-    # Return unused bucket capacity, preferring remaining native metadata before
-    # allowing open search to overflow its 16-item target.
-    if len(accepted) < max_urls:
-        _score_backfill(
-            _remaining_eligible(native_prepared),
-            accepted=accepted,
-            host_counts=host_counts,
-            target_total=max_urls,
-            phase="native_cross_bucket_backfill",
-        )
-    if len(accepted) < max_urls:
-        _score_backfill(
-            _remaining_eligible(open_prepared),
-            accepted=accepted,
-            host_counts=host_counts,
-            target_total=max_urls,
-            phase="open_cross_bucket_backfill",
-        )
+    remaining = _remaining_eligible(native_prepared) + _remaining_eligible(
+        open_prepared
+    )
+    remaining.sort(key=lambda candidate: candidate.score, reverse=True)
+    _quality_fill(
+        remaining,
+        accepted=accepted,
+        host_counts=host_counts,
+        target_total=max_urls,
+    )
 
     selected_urls = {candidate.canonical_url for candidate in accepted}
     for prepared in (native_prepared, open_prepared):
@@ -353,14 +353,14 @@ def filter_discovered(
                     rank=reserve_rank,
                 )
             for candidate in overflow:
-                # Source/domain overflow status was assigned by _prepare_groups.
                 if candidate.canonical_url not in selected_urls:
                     _selection(candidate.item).setdefault(
                         "selection_status", "final_not_selected"
                     )
 
-    # Audit invariant: selected order is contiguous and extraction attempts stay
-    # bounded by max_urls. Reserve items are not returned as rejected pages.
+    # Return and extract in editorial order rather than in quota-construction
+    # order. Diversity membership is preserved; only execution priority changes.
+    accepted.sort(key=lambda candidate: candidate.score, reverse=True)
     for order, candidate in enumerate(accepted, start=1):
         _selection(candidate.item)["selected_order"] = order
     return [candidate.item for candidate in accepted], rejected
@@ -370,8 +370,10 @@ __all__ = [
     "ABSOLUTE_HOST_CAP",
     "DISCOVERY_HARD_REJECT_REASONS",
     "NATIVE_BUCKET_TARGET",
+    "NATIVE_DIVERSITY_ROUNDS",
     "NATIVE_SOURCE_CAP",
     "OPEN_BUCKET_TARGET",
+    "OPEN_DIVERSITY_FLOOR",
     "OPEN_DOMAIN_CAP",
     "RESERVE_STATUSES",
     "SELECTION_VERSION",
