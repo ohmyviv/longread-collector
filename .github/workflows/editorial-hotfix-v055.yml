@@ -17,10 +17,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: production-sheet-smoke-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   validate-editorial-hotfix:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -69,8 +73,17 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
           TIMEZONE: Asia/Shanghai
         run: |
-          python -m longread_collector.known_source_fixes_smoke \
-            --output-json artifacts/known-source-fixes-smoke-v055.json
+          for attempt in 1 2 3; do
+            if python -m longread_collector.known_source_fixes_smoke \
+              --output-json artifacts/known-source-fixes-smoke-v055.json; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            echo "Sheet-backed smoke failed; waiting for API quota window (attempt $attempt/3)."
+            sleep 70
+          done
       - name: Upload validation evidence
         if: always()
         uses: actions/upload-artifact@v4
