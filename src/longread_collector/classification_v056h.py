@@ -49,6 +49,11 @@ _EN_EVENT_TITLE_RE = re.compile(
     r".{0,80}\b(?:conference|summit|webinar|forum|symposium|workshop)\b",
     re.I,
 )
+_EVENT_OPENING_TITLE_RE = re.compile(
+    r"\b(?:opens?|begins?|starts?)\b(?:\s+(?:monday|tuesday|wednesday|"
+    r"thursday|friday|saturday|sunday|today|tomorrow))?",
+    re.I,
+)
 _EVENT_BODY_RE = re.compile(
     r"\b(?:register|registration|rsvp|tickets?|agenda|speakers?|schedule|"
     r"standard pass|vip pass|join us|first webinar)\b|"
@@ -112,12 +117,13 @@ def _non_editorial_result(
         _CN_EVENT_TITLE_RE.search(title_text) or _EN_EVENT_TITLE_RE.search(title_text)
     )
     event_body = bool(_EVENT_BODY_RE.search(body) and _EVENT_BODY_TYPE_RE.search(body))
+    event_opening = bool(_EVENT_OPENING_TITLE_RE.search(title_text) and event_body)
     brief_webinar = bool(
         _BRIEF_EVENT_TITLE_RE.search(title_text)
         and re.search(r"\b(?:first\s+)?webinar\b", body, re.I)
         and re.search(r"\bspeakers?\s*:", body, re.I)
     )
-    if (event_title and event_body) or brief_webinar:
+    if (event_title and event_body) or event_opening or brief_webinar:
         return _reject(
             "event_announcement_or_recap_v056h",
             "event_or_release_announcement",
