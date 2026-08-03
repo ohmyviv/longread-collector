@@ -36,11 +36,15 @@ TARGET_PUBLISHED_AT_BJ = {
         ),
     },
     "bjnews-depth": {
+        # The first ten digits in Bjnews detail IDs are Unix seconds. The
+        # timestamp below is 1785144458 -> 2026-07-27 17:27:38 BJT. An older
+        # fixture accidentally placed it on July 28 and kept the target active
+        # beyond the route's real seven-day window.
         "https://www.bjnews.com.cn/detail/1785144458129453.html": datetime(
-            2026, 7, 28, 9, 16
+            2026, 7, 27, 17, 27, 38
         ),
         "https://www.bjnews.com.cn/detail/1785199934129721.html": datetime(
-            2026, 7, 28, 8, 52
+            2026, 7, 28, 8, 52, 14
         ),
     },
     "thepaper": {
