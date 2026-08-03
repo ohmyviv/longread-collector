@@ -9,6 +9,9 @@ on:
       - 'src/longread_collector/supplemental_date_evidence_v056f.py'
       - 'src/longread_collector/prefilter_v056c.py'
       - 'src/longread_collector/post_extraction_gates_v056.py'
+      - 'src/longread_collector/post_freshness_v056h.py'
+      - 'src/longread_collector/classification_v056h.py'
+      - 'src/longread_collector/classification_v056i.py'
       - 'src/longread_collector/page_gate_policy_v056.py'
       - 'src/longread_collector/ranked_freshness_v056.py'
       - 'src/longread_collector/ranked_selection_v056.py'
@@ -28,6 +31,8 @@ on:
       - 'tests/test_freshness_policy_v056f.py'
       - 'tests/test_supplemental_date_evidence_v056f.py'
       - 'tests/test_page_gate_policy_v056.py'
+      - 'tests/test_post_extraction_quality_v056h.py'
+      - 'tests/test_post_extraction_quality_v056i.py'
       - 'tests/test_reserve_only_v056f.py'
       - 'tests/test_offline_replay_v056.py'
       - 'tests/test_offline_replay_v056g.py'
@@ -63,6 +68,8 @@ jobs:
             tests/test_freshness_policy_v056f.py \
             tests/test_supplemental_date_evidence_v056f.py \
             tests/test_page_gate_policy_v056.py \
+            tests/test_post_extraction_quality_v056h.py \
+            tests/test_post_extraction_quality_v056i.py \
             tests/test_reserve_only_v056f.py \
             tests/test_offline_replay_v056.py \
             tests/test_offline_replay_v056g.py \
