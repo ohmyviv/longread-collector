@@ -9,7 +9,7 @@ from . import classification as _classification
 from . import pipeline_v05 as _pipeline_v05
 from . import pipeline_v056b as _pipeline_v056b
 from . import quality as _quality
-from .classification_v056 import CLASSIFICATION_VERSION, classify_candidate_v056
+from .classification_v056h import CLASSIFICATION_VERSION, classify_candidate_v056h
 from .extraction import FallbackBudget
 from .models import DiscoveredURL, ExtractedArticle
 from .pipeline_v056c import NativeCollectorPipeline as _BasePipeline
@@ -23,8 +23,8 @@ from .source_relationship_v056 import (
 # v0.5.5 installs its classifier during module import. PR-D replaces the
 # callable after PR-C is fully loaded, so extraction and quality use one policy.
 _classification.CLASSIFICATION_VERSION = CLASSIFICATION_VERSION
-_classification.classify_candidate = classify_candidate_v056
-_quality.classify_candidate = classify_candidate_v056
+_classification.classify_candidate = classify_candidate_v056h
+_quality.classify_candidate = classify_candidate_v056h
 _pipeline_v05.build_source_chase_queries = build_source_chase_queries_v056
 
 _PR_D_MARKER = (

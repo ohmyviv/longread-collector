@@ -6,11 +6,14 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
-from .freshness_policy_v056f import evaluate_freshness_policy
 from .models import DiscoveredURL, ExtractedArticle
 from .page_gate_policy_v056 import evaluate_page_gate_policy
+from .post_freshness_v056h import (
+    POST_FRESHNESS_VERSION,
+    evaluate_post_extraction_freshness,
+)
 
-POST_EXTRACTION_GATE_VERSION = "post-extraction-gates-v0.5.6f"
+POST_EXTRACTION_GATE_VERSION = "post-extraction-gates-v0.5.6h"
 
 
 def _evaluation_item(
@@ -49,6 +52,7 @@ def _reject_article(
     audit.update(
         {
             "version": POST_EXTRACTION_GATE_VERSION,
+            "post_freshness_version": POST_FRESHNESS_VERSION,
             "gate": gate,
             "reason": reason,
         }
@@ -73,13 +77,14 @@ def apply_post_extraction_gates(
 ) -> dict[str, Any]:
     item = _evaluation_item(discovered, article)
     page = evaluate_page_gate_policy(item)
-    freshness = evaluate_freshness_policy(item, phase="post_extraction", now=now)
+    freshness = evaluate_post_extraction_freshness(item, now=now)
 
     article.metadata["page_gate"] = deepcopy(item.metadata.get("page_gate", {}))
     article.metadata["freshness"] = deepcopy(item.metadata.get("freshness", {}))
     article.metadata.setdefault("post_extraction_gate", {}).update(
         {
             "version": POST_EXTRACTION_GATE_VERSION,
+            "post_freshness_version": POST_FRESHNESS_VERSION,
             "page_gate_rejected": page.rejected,
             "page_gate_reason": page.reject_reason,
             "freshness_allowed": freshness.allowed,
