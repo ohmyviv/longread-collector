@@ -17,6 +17,10 @@ from .quality import filter_discovered
 from .runtime_config import load_collector_runtime_config
 from .shadow import append_shadow_ab
 from .source_chase import build_source_chase_queries
+from .source_chase_identity_v056j import (
+    evaluate_source_chase_identity,
+    reject_source_chase_mismatch,
+)
 from .source_registry_metrics import update_source_registry_metrics
 from .extraction import FallbackBudget
 
@@ -160,6 +164,7 @@ class NativeCollectorPipeline(CollectorPipeline):
 
             parents = {article.article_id: article for article in articles}
             source_chase_resolved = 0
+            source_chase_identity_rejected = 0
             for discovered_item, chased_article in zip(
                 chased_deduped,
                 chased_articles,
@@ -174,12 +179,27 @@ class NativeCollectorPipeline(CollectorPipeline):
                 included_domains = set(
                     discovered_item.metadata.get("source_chase_include_domains", [])
                 )
-                resolved = (
-                    chased_article.candidate_disposition
-                    in {"formal_candidate", "special_candidate"}
-                    or chased_article.domain in included_domains
+                identity = evaluate_source_chase_identity(
+                    parent=parent,
+                    chased=chased_article,
+                    included_domains=included_domains,
                 )
-                if resolved:
+                identity_payload = identity.as_dict()
+                chased_article.metadata["source_chase_identity"] = identity_payload
+                parent.metadata.setdefault("source_chase_attempts", [])
+                parent.metadata["source_chase_attempts"].append(
+                    {
+                        "resolved_article_id": chased_article.article_id,
+                        "resolved_url": chased_article.url_canonical,
+                        "seed_title": parent.title,
+                        "chased_title": chased_article.title,
+                        "identity_score": identity.score,
+                        "identity_gate_result": identity.result,
+                        "identity_evidence": identity.evidence,
+                    }
+                )
+
+                if identity.matched:
                     parent.original_url = chased_article.url_canonical
                     parent.canonical_source = chased_article.canonical_source
                     parent.metadata.setdefault("source_chase", {})
@@ -188,9 +208,33 @@ class NativeCollectorPipeline(CollectorPipeline):
                             "resolved": True,
                             "resolved_article_id": chased_article.article_id,
                             "resolved_url": chased_article.url_canonical,
+                            "seed_title": parent.title,
+                            "chased_title": chased_article.title,
+                            "identity_score": identity.score,
+                            "identity_gate_result": identity.result,
+                            "identity_evidence": identity.evidence,
                         }
                     )
                     source_chase_resolved += 1
+                    continue
+
+                reject_source_chase_mismatch(chased_article, identity)
+                source_chase_identity_rejected += 1
+                source_chase_state = parent.metadata.setdefault("source_chase", {})
+                if not source_chase_state.get("resolved"):
+                    source_chase_state.update(
+                        {
+                            "resolved": False,
+                            "reason": "chase_no_match",
+                            "last_attempt_article_id": chased_article.article_id,
+                            "last_attempt_url": chased_article.url_canonical,
+                            "seed_title": parent.title,
+                            "chased_title": chased_article.title,
+                            "identity_score": identity.score,
+                            "identity_gate_result": identity.result,
+                            "identity_evidence": identity.evidence,
+                        }
+                    )
 
             all_discovered = deduped + chased_deduped
             all_articles = articles + chased_articles
@@ -241,6 +285,7 @@ class NativeCollectorPipeline(CollectorPipeline):
                 for log in discovery_logs + chase_logs
                 if log.get("success")
             )
+            summary["source_chase_identity_rejected"] = source_chase_identity_rejected
             summary["final_status"] = "success"
 
             all_rejections = prefilter_rejections + chase_prefilter_rejections
@@ -281,6 +326,7 @@ class NativeCollectorPipeline(CollectorPipeline):
                 f"source_chase_attempts={len(chase_queries)}; "
                 f"source_chase_results={len(chased_deduped)}; "
                 f"source_chase_resolved={source_chase_resolved}; "
+                f"source_chase_identity_rejected={source_chase_identity_rejected}; "
                 f"discovered_technical_domains={len(discovered_domains)}; "
                 f"nonreject_canonical_sources={len(canonical_sources)}; "
                 f"content_clusters={len(content_clusters)}; "
