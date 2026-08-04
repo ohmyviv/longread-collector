@@ -155,6 +155,7 @@ jobs:
           done
       - name: Verify v1.1 Sheet write
         env:
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
           GOOGLE_SHEET_ID: 1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4
           GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
           TIMEZONE: Asia/Shanghai
