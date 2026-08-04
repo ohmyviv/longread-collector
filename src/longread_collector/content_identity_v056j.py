@@ -29,7 +29,7 @@ _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\([^\)]*\)")
 _TEMPLATE_CUTOFF_RE = re.compile(
     r"(?m)^\s*(?:#{1,6}\s*)?(?:热门推荐|相关推荐|评论(?:\s*\d+)?|"
     r"阅读下一篇|一周热新闻|大家都在看|编辑推荐|Copyright\b|"
-    r"扫码下载|关于我们|联系我们)\s*$",
+    r"扫码下载|关于我们|联系我们)(?:\s*[:：].*)?\s*$",
     re.I,
 )
 _TEMPLATE_LINE_RE = re.compile(
@@ -106,14 +106,23 @@ def first_body_heading(markdown: str) -> str:
     return ""
 
 
+def _first_body_heading_start(markdown: str) -> int:
+    for match in _HEADING_RE.finditer(str(markdown or "")):
+        heading = _plain(match.group(1))
+        if heading and not _GENERIC_TITLE_RE.fullmatch(heading):
+            return match.start()
+    return 0
+
+
 def main_body_metrics(markdown: str) -> dict[str, int]:
     raw = str(markdown or "")
     image_count = len(_IMAGE_RE.findall(raw))
     video_count = len(_VIDEO_LINK_RE.findall(raw))
     heading_count = len(re.findall(r"(?m)^\s*#{1,6}\s+", raw))
 
-    cutoff = _TEMPLATE_CUTOFF_RE.search(raw)
-    main = raw[: cutoff.start()] if cutoff else raw
+    start = _first_body_heading_start(raw)
+    cutoff = _TEMPLATE_CUTOFF_RE.search(raw, start)
+    main = raw[start : cutoff.start()] if cutoff else raw[start:]
     main = re.sub(r"```.*?```", " ", main, flags=re.S)
     main = _IMAGE_RE.sub(" ", main)
     main = _VIDEO_LINK_RE.sub(" ", main)
