@@ -17,9 +17,14 @@ on:
   pull_request:
     paths:
       - 'src/longread_collector/final_recall_audit.py'
+      - 'src/longread_collector/final_recall_audit_v11.py'
+      - 'src/longread_collector/final_recall_audit_v11_runner.py'
+      - 'src/longread_collector/registry_matching_v056.py'
       - 'src/longread_collector/recall_instrumentation.py'
       - 'src/longread_collector/pipeline_v051.py'
       - 'tests/test_final_recall_audit.py'
+      - 'tests/test_final_recall_audit_v11.py'
+      - 'tests/test_final_recall_workflow_v11.py'
       - '.github/workflows/final-recall-audit.yml'
 
 permissions:
@@ -36,7 +41,13 @@ jobs:
           python-version: '3.12'
           cache: pip
       - run: pip install . pytest
-      - run: pytest -q tests/test_final_recall_audit.py tests/test_native_discovery_v05.py tests/test_known_source_fixes.py
+      - run: >-
+          pytest -q
+          tests/test_final_recall_audit.py
+          tests/test_final_recall_audit_v11.py
+          tests/test_final_recall_workflow_v11.py
+          tests/test_native_discovery_v05.py
+          tests/test_known_source_fixes.py
 
   live-dry-run:
     if: github.event_name == 'pull_request'
@@ -57,7 +68,7 @@ jobs:
           test -n "$GOOGLE_SERVICE_ACCOUNT_JSON_B64"
           echo "$GOOGLE_SERVICE_ACCOUNT_JSON_B64" | base64 -d > /tmp/google-service-account.json
           chmod 600 /tmp/google-service-account.json
-      - name: Read today's final items and calculate without writes
+      - name: Read known final items and calculate v1.1 without writes
         env:
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
           GOOGLE_SHEET_ID: 1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4
@@ -65,16 +76,18 @@ jobs:
           TIMEZONE: Asia/Shanghai
         run: |
           mkdir -p artifacts
-          python -m longread_collector.final_recall_audit \
-            --report-date 2026-07-31 \
+          python -m longread_collector.final_recall_audit_v11_runner \
+            --report-date 2026-08-02 \
+            --cutoff-time 07:35 \
             --lookback-hours 48 \
             --dry-run \
-            --output-json artifacts/final-recall-audit-dry-run.json
+            > artifacts/final-recall-audit-v11-dry-run-summary.json
+          cat artifacts/final-recall-audit-v11-dry-run-summary.json
       - name: Upload dry-run evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: final-recall-dry-run-${{ github.run_id }}
+          name: final-recall-v11-dry-run-${{ github.run_id }}
           path: artifacts/
           if-no-files-found: warn
 
@@ -82,7 +95,7 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: regression
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -97,7 +110,7 @@ jobs:
           test -n "$GOOGLE_SERVICE_ACCOUNT_JSON_B64"
           echo "$GOOGLE_SERVICE_ACCOUNT_JSON_B64" | base64 -d > /tmp/google-service-account.json
           chmod 600 /tmp/google-service-account.json
-      - name: Audit final recommendation recall
+      - name: Audit final recommendation recall v1.1
         env:
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
           GOOGLE_SHEET_ID: 1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4
@@ -107,18 +120,31 @@ jobs:
           DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
           mkdir -p artifacts
-          args=(--lookback-hours 48 --output-json artifacts/final-recall-audit.json)
-          if [ -n "$REPORT_DATE" ]; then
-            args+=(--report-date "$REPORT_DATE")
-          fi
+          report_date="${REPORT_DATE:-$(TZ=Asia/Shanghai date +%F)}"
+          args=(
+            --report-date "$report_date"
+            --cutoff-time 07:35
+            --lookback-hours 48
+          )
           if [ "$DRY_RUN" = "true" ]; then
             args+=(--dry-run)
           fi
-          python -m longread_collector.final_recall_audit "${args[@]}"
+          for attempt in 1 2 3; do
+            if python -m longread_collector.final_recall_audit_v11_runner "${args[@]}" \
+              > artifacts/final-recall-audit-v11-summary.json; then
+              cat artifacts/final-recall-audit-v11-summary.json
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            echo "Recall audit v1.1 failed; waiting for the Sheets quota window (attempt $attempt/3)."
+            sleep 95
+          done
       - name: Upload audit evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: final-recall-audit-${{ github.run_id }}
+          name: final-recall-audit-v11-${{ github.run_id }}
           path: artifacts/
           if-no-files-found: warn
