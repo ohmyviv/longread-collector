@@ -44,3 +44,4 @@ def test_write_mode_verifies_both_v11_sheets() -> None:
     assert "Write verification failed" in text
     assert "RESOLVED_REPORT_DATE" in text
     assert "EFFECTIVE_MODE" in text
+    assert text.count("FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}") >= 3
