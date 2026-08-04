@@ -12,6 +12,12 @@ on:
       - 'src/longread_collector/post_freshness_v056h.py'
       - 'src/longread_collector/classification_v056h.py'
       - 'src/longread_collector/classification_v056i.py'
+      - 'src/longread_collector/classification_v056j.py'
+      - 'src/longread_collector/content_identity_v056j.py'
+      - 'src/longread_collector/source_chase_identity_v056j.py'
+      - 'src/longread_collector/source_chase_v056.py'
+      - 'src/longread_collector/pipeline_v05.py'
+      - 'src/longread_collector/pipeline_v056d.py'
       - 'src/longread_collector/page_gate_policy_v056.py'
       - 'src/longread_collector/ranked_freshness_v056.py'
       - 'src/longread_collector/ranked_selection_v056.py'
@@ -33,6 +39,8 @@ on:
       - 'tests/test_page_gate_policy_v056.py'
       - 'tests/test_post_extraction_quality_v056h.py'
       - 'tests/test_post_extraction_quality_v056i.py'
+      - 'tests/test_content_identity_v056j.py'
+      - 'tests/test_source_chase_identity_v056j.py'
       - 'tests/test_reserve_only_v056f.py'
       - 'tests/test_offline_replay_v056.py'
       - 'tests/test_offline_replay_v056g.py'
@@ -70,6 +78,8 @@ jobs:
             tests/test_page_gate_policy_v056.py \
             tests/test_post_extraction_quality_v056h.py \
             tests/test_post_extraction_quality_v056i.py \
+            tests/test_content_identity_v056j.py \
+            tests/test_source_chase_identity_v056j.py \
             tests/test_reserve_only_v056f.py \
             tests/test_offline_replay_v056.py \
             tests/test_offline_replay_v056g.py \
