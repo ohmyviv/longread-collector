@@ -9,11 +9,14 @@ on:
         description: 'Report date in YYYY-MM-DD; blank uses current Beijing date'
         required: false
         type: string
-      dry_run:
-        description: 'Calculate without writing audit sheets'
-        required: false
-        default: false
-        type: boolean
+      execution_mode:
+        description: 'Execution mode'
+        required: true
+        default: write_to_sheets
+        type: choice
+        options:
+          - write_to_sheets
+          - dry_run
   pull_request:
     paths:
       - 'src/longread_collector/final_recall_audit.py'
@@ -117,16 +120,25 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
           TIMEZONE: Asia/Shanghai
           REPORT_DATE: ${{ github.event.inputs.report_date }}
-          DRY_RUN: ${{ github.event.inputs.dry_run }}
+          EXECUTION_MODE: ${{ github.event.inputs.execution_mode }}
         run: |
           mkdir -p artifacts
           report_date="${REPORT_DATE:-$(TZ=Asia/Shanghai date +%F)}"
+          mode="${EXECUTION_MODE:-write_to_sheets}"
+          case "$mode" in
+            write_to_sheets|dry_run) ;;
+            *) echo "Unsupported execution mode: $mode"; exit 2 ;;
+          esac
+          echo "Resolved report_date=$report_date"
+          echo "Resolved execution_mode=$mode"
+          echo "RESOLVED_REPORT_DATE=$report_date" >> "$GITHUB_ENV"
+          echo "EFFECTIVE_MODE=$mode" >> "$GITHUB_ENV"
           args=(
             --report-date "$report_date"
             --cutoff-time 07:35
             --lookback-hours 48
           )
-          if [ "$DRY_RUN" = "true" ]; then
+          if [ "$mode" = "dry_run" ]; then
             args+=(--dry-run)
           fi
           for attempt in 1 2 3; do
@@ -141,6 +153,54 @@ jobs:
             echo "Recall audit v1.1 failed; waiting for the Sheets quota window (attempt $attempt/3)."
             sleep 95
           done
+      - name: Verify v1.1 Sheet write
+        env:
+          GOOGLE_SHEET_ID: 1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4
+          GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
+          TIMEZONE: Asia/Shanghai
+        run: |
+          if [ "$EFFECTIVE_MODE" != "write_to_sheets" ]; then
+            echo "Dry-run mode selected; write verification skipped."
+            exit 0
+          fi
+          python - <<'PY'
+          import json
+          import os
+
+          from longread_collector.config import get_settings
+          from longread_collector.sheets import GoogleSheetStore
+
+          report_date = os.environ["RESOLVED_REPORT_DATE"]
+          store = GoogleSheetStore(get_settings())
+          daily_rows = store.book.worksheet("final_recall_daily_v11").get_all_records()
+          matching_daily = [
+              row for row in daily_rows
+              if str(row.get("report_date", "")).strip() == report_date
+          ]
+          if not matching_daily:
+              raise SystemExit(
+                  f"Write verification failed: final_recall_daily_v11 has no {report_date} row"
+              )
+
+          summary = matching_daily[-1]
+          audit_rows = store.book.worksheet("final_recall_audit_v11").get_all_records()
+          matching_items = [
+              row for row in audit_rows
+              if str(row.get("report_date", "")).strip() == report_date
+          ]
+          expected_items = int(summary.get("final_items") or 0)
+          if len(matching_items) != expected_items:
+              raise SystemExit(
+                  "Write verification failed: "
+                  f"daily final_items={expected_items}, detail rows={len(matching_items)}"
+              )
+          print(json.dumps({
+              "report_date": report_date,
+              "daily_row_present": True,
+              "detail_rows": len(matching_items),
+              "final_run_id": summary.get("final_run_id", ""),
+          }, ensure_ascii=False, indent=2))
+          PY
       - name: Upload audit evidence
         if: always()
         uses: actions/upload-artifact@v4
