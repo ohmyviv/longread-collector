@@ -64,9 +64,11 @@ def classify_candidate_v056j(
     verification_level: str = "",
     content_chars: int = 0,
 ) -> ClassificationResult:
-    identity = evaluate_content_identity(title=title, markdown=markdown)
+    markdown_text = str(markdown or "")
+    has_body = bool(markdown_text.strip())
+    identity = evaluate_content_identity(title=title, markdown=markdown_text)
     title_text = identity.resolved_title or str(title or "").strip()
-    body = " ".join((str(description or ""), str(markdown or "")[:9000]))
+    body = " ".join((str(description or ""), markdown_text[:9000]))
 
     if identity.generic_title and not identity.body_heading:
         return _reject(
@@ -75,7 +77,7 @@ def classify_candidate_v056j(
             "non_article_shell",
         )
 
-    if identity.video_count >= 1 and _VIDEO_BODY_RE.search(body):
+    if has_body and identity.video_count >= 1 and _VIDEO_BODY_RE.search(body):
         return _reject(
             "video_program_page_v056j",
             "video_page",
@@ -83,7 +85,8 @@ def classify_candidate_v056j(
         )
 
     if (
-        _VISUAL_TITLE_RE.search(title_text)
+        has_body
+        and _VISUAL_TITLE_RE.search(title_text)
         and identity.image_count >= 3
         and identity.body_prose_chars < 2200
     ):
@@ -95,7 +98,8 @@ def classify_candidate_v056j(
 
     event_excerpt = body[:5000]
     if (
-        _EVENT_RECAP_BODY_RE.search(event_excerpt)
+        has_body
+        and _EVENT_RECAP_BODY_RE.search(event_excerpt)
         and len(_EVENT_SPEECH_RE.findall(event_excerpt)) >= 3
         and not _REPORTED_GUARD_RE.search(title_text)
     ):
@@ -106,7 +110,8 @@ def classify_candidate_v056j(
         )
 
     if (
-        identity.body_prose_chars < 900
+        has_body
+        and identity.body_prose_chars < 900
         and not _SHORT_BRIEF_GUARD_RE.search(title_text)
         and identity.image_count <= 4
     ):
@@ -121,7 +126,7 @@ def classify_candidate_v056j(
         title=title_text,
         description=description,
         author=author,
-        markdown=markdown,
+        markdown=markdown_text,
         published_at=published_at,
         verification_level=verification_level,
         content_chars=(identity.body_prose_chars or content_chars),
