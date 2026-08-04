@@ -1,4 +1,4 @@
-"""Source-chase queries aligned to v0.5.6d relationship decisions."""
+"""Source-chase queries aligned to v0.5.6 relationship decisions."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from .models import ExtractedArticle
 from .source_chase import SourceChaseQuery
 from .source_chase_v055 import build_source_chase_queries_v055
 
-SOURCE_CHASE_VERSION = "relationship-aware-v0.5.6d"
+SOURCE_CHASE_VERSION = "relationship-aware-query+identity-gate-v0.5.6j"
 
 
 def _clean(value: str, limit: int = 240) -> str:
