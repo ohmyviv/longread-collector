@@ -7,9 +7,7 @@ all extraction and operational instrumentation has completed.
 
 from __future__ import annotations
 
-from . import classification as _classification
 from . import post_extraction_gates_v056k as _post_gates
-from . import quality as _quality
 from .classification_v056k_final import (
     CLASSIFICATION_VERSION,
     classify_candidate_v056k_final,
@@ -20,14 +18,6 @@ from .models import DiscoveredURL, ExtractedArticle
 from .pipeline_v056d import _apply_classification
 from .pipeline_v056e import NativeCollectorPipeline as _BasePipeline
 from .publication_date_v056k_final import extract_body_publication_date_final
-
-# Earlier layers resolve these callables at module scope. Point the shared
-# classification and terminal-date hooks at the final reviewed policy without
-# modifying the stable PR-D/PR-E implementations.
-_classification.CLASSIFICATION_VERSION = CLASSIFICATION_VERSION
-_classification.classify_candidate = classify_candidate_v056k_final
-_quality.classify_candidate = classify_candidate_v056k_final
-_post_gates.extract_body_publication_date = extract_body_publication_date_final
 
 FINAL_CALIBRATION_VERSION = "shadow-quality-final-v0.5.6k"
 
@@ -72,7 +62,21 @@ class NativeCollectorPipeline(_BasePipeline):
                 content_chars=identity.body_prose_chars,
             )
             _apply_classification(article, result)
-            _post_gates.apply_post_extraction_gates_v056k(discovered_item, article)
+
+            # The final date parser is scoped to this terminal projection only;
+            # importing the release pipeline must not mutate global test or
+            # offline-replay behavior.
+            original_date_parser = _post_gates.extract_body_publication_date
+            _post_gates.extract_body_publication_date = (
+                extract_body_publication_date_final
+            )
+            try:
+                _post_gates.apply_post_extraction_gates_v056k(
+                    discovered_item,
+                    article,
+                )
+            finally:
+                _post_gates.extract_body_publication_date = original_date_parser
 
             article.metadata["classification_policy"] = {
                 "version": CLASSIFICATION_VERSION,
