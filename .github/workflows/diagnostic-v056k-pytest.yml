@@ -1,0 +1,32 @@
+name: Diagnostic v0.5.6k pytest
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest-diagnostics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install . pytest
+      - name: Run full pytest with captured output
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          pytest -q 2>&1 | tee artifacts/pytest-v056k.txt
+      - name: Upload pytest output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-v056k-diagnostics
+          path: artifacts/pytest-v056k.txt
+          if-no-files-found: error
