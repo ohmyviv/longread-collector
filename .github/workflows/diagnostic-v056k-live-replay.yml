@@ -50,10 +50,10 @@ jobs:
           BJ = ZoneInfo('Asia/Shanghai')
           NOW = datetime(2026, 8, 5, 22, 0, tzinfo=BJ)
           TARGET_BATCHES = {
+              'V056J-DAY1-20260805-BLOCKER4',
               'V056J-DAY1-20260805-PREREPORT-CANDIDATES',
               'V056J-DAY1-20260805-ZH-MIDDAY-CANDIDATES',
               'V056J-DAY1-20260805-ZH-MIDDAY-REJECTS',
-              'V056J-DAY1-20260805-HIGH-RISK-BATCH-1',
           }
 
           def pad(row: list[str], size: int) -> list[str]:
@@ -204,14 +204,23 @@ jobs:
           }
           path = Path('artifacts/v056k-live-shadow-replay.json')
           path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
-          print(json.dumps({key: value for key, value in report.items() if key != 'items'}, ensure_ascii=False, indent=2))
+          summary = {key: value for key, value in report.items() if key != 'items'}
+          print(json.dumps(summary, ensure_ascii=False, indent=2))
+          step_summary = Path(os.environ.get('GITHUB_STEP_SUMMARY', '/tmp/v056k-summary.md'))
+          step_summary.write_text(
+              '## v0.5.6k live shadow replay\n\n```json\n'
+              + json.dumps(summary, ensure_ascii=False, indent=2)
+              + '\n```\n',
+              encoding='utf-8',
+          )
           if report['disposition_accuracy'] < 1.0:
               raise SystemExit(1)
           PY
           python /tmp/replay_v056k.py
       - name: Upload live replay evidence
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: v056k-live-shadow-replay
           path: artifacts/v056k-live-shadow-replay.json
+          if-no-files-found: error
