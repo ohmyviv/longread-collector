@@ -54,6 +54,7 @@ _HOST_SOURCE_TOKENS: dict[str, tuple[str, ...]] = {
     "mee.gov.cn": ("生态环境部",),
     "cq.gov.cn": ("重庆市人民政府", "重庆市政府网"),
     "china.com": ("中华网",),
+    "sh-italent.com": ("上海国际人才网",),
     "news.cn": ("新华社", "新华网"),
     "xinhuanet.com": ("新华社", "新华网"),
     "eeo.com.cn": ("经济观察网", "经济观察报"),
@@ -64,6 +65,14 @@ _HOST_SOURCE_TOKENS: dict[str, tuple[str, ...]] = {
 
 def _domain(url: str) -> str:
     return urlsplit(str(url or "")).netloc.lower().removeprefix("www.")
+
+
+def _registered_host(url: str) -> bool:
+    domain = _domain(url)
+    return any(
+        domain == suffix or domain.endswith(f".{suffix}")
+        for suffix in _HOST_SOURCE_TOKENS
+    )
 
 
 def _same_publisher(source: str, url: str) -> bool:
@@ -120,6 +129,20 @@ def _reject_official_meeting() -> ClassificationResult:
     )
 
 
+def _reset_untrusted_source(result: ClassificationResult) -> ClassificationResult:
+    if "transparent_source_line_v056k" not in result.reason:
+        return result
+    result.source_relationship = "original"
+    result.original_publisher = ""
+    result.original_url = ""
+    if result.candidate_disposition != "reject":
+        result.source_action = "retain_with_source_label"
+    result.reason = result.reason.replace(
+        "; transparent_source_line_v056k", ""
+    ).replace("transparent_source_line_v056k; ", "")
+    return result
+
+
 def _apply_source_calibration(
     result: ClassificationResult,
     *,
@@ -131,31 +154,15 @@ def _apply_source_calibration(
     if result.source_relationship == "translated_republish":
         return result
 
-    if not source:
-        # The base layer may have found a source token in navigation or a legal
-        # disclaimer. Without a source in the article-header window, do not
-        # change authorship.
-        if "transparent_source_line_v056k" in result.reason:
-            result.source_relationship = "original"
-            result.original_publisher = ""
-            result.original_url = ""
-            if result.candidate_disposition != "reject":
-                result.source_action = "retain_with_source_label"
-            result.reason = result.reason.replace(
-                "; transparent_source_line_v056k", ""
-            ).replace("transparent_source_line_v056k; ", "")
-        return result
+    # A generic source label is weak evidence on an original editorial site:
+    # it can be an image credit, reporting partner, quoted publication or legal
+    # footer. Only domains registered as reliable hosting/republication pages
+    # are allowed to change authorship from such a label.
+    if not source or not _registered_host(url):
+        return _reset_untrusted_source(result)
 
     if _same_publisher(source, url):
-        result.source_relationship = "original"
-        result.original_publisher = ""
-        result.original_url = ""
-        if result.candidate_disposition != "reject":
-            result.source_action = "retain_with_source_label"
-        result.reason = result.reason.replace(
-            "; transparent_source_line_v056k", ""
-        ).replace("transparent_source_line_v056k; ", "")
-        return result
+        return _reset_untrusted_source(result)
 
     result.source_relationship = "secondary_republish"
     result.original_publisher = source
