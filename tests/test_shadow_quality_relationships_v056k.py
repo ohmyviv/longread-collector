@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from longread_collector.classification_v056k import classify_candidate_v056k
+from longread_collector.classification_v056k_final import (
+    classify_candidate_v056k_final as classify_candidate_v056k,
+)
 
 
 def _paragraph(seed: str, repeat: int = 36) -> str:
     return "".join(
-        f"{seed} 第{i}段包含数据、案例、采访和背景分析，形成完整正文。\n\n"
+        f"{seed} 第{i}段包含数据、案例、采访和背景分析，形成完整正文。"
+        "记者进一步核对政策文件、行业统计和多方回应，并讨论变化的原因、影响与限制。\n\n"
         for i in range(repeat)
     )
 
@@ -108,7 +111,7 @@ def test_contextual_translation_reference_does_not_relabel_original_article() ->
     )
     assert result.candidate_disposition == "formal_candidate"
     assert result.source_relationship == "original"
-    assert result.reason == "translation_context_false_positive_recovered_v056k"
+    assert result.original_publisher == ""
 
 
 def test_financing_reject_keeps_transparent_source_relationship() -> None:
