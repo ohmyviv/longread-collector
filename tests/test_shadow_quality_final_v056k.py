@@ -17,7 +17,8 @@ BJ = ZoneInfo("Asia/Shanghai")
 
 def _paragraph(seed: str, repeat: int = 36) -> str:
     return "".join(
-        f"{seed} 第{i}段包含数据、案例、采访和背景分析，形成完整正文。\n\n"
+        f"{seed} 第{i}段包含数据、案例、采访和背景分析，形成完整正文。"
+        "记者进一步核对政策文件、行业统计和多方回应，并讨论变化的原因、影响与限制。\n\n"
         for i in range(repeat)
     )
 
@@ -46,6 +47,7 @@ def test_external_header_source_is_secondary_republish() -> None:
     markdown = (
         "# 人工智能技术产业迎来爆发式增长\n\n"
         "2026-08-05 09:38:44 来源：人民邮电报\n\n"
+        "工业和信息化部数据显示产业规模增长，记者结合报告与企业案例展开分析。\n\n"
         + _paragraph("人工智能产业", 45)
     )
     result = classify_candidate_v056k_final(
@@ -64,6 +66,7 @@ def test_same_publisher_header_source_stays_original() -> None:
     markdown = (
         "# AI进厨房，味道怎么样\n\n"
         "2026-08-05 08:31 来源：中国经济网-《经济日报》 中国经济网记者\n\n"
+        "记者深入采访实验室、食品企业和餐饮机构，分析人工智能的实际应用与局限。\n\n"
         + _paragraph("食品工业智能化", 48)
     )
     result = classify_candidate_v056k_final(
