@@ -76,7 +76,10 @@ def run_replay(*, sheet_id: str, credentials_file: str) -> dict[str, object]:
         cache_article_id = values[0].strip()
         extraction_status = values[16].strip()
         markdown = values[20]
-        if extraction_status != "success" or len(markdown.strip()) < 500:
+        # Human review established that a substantial recovered body remains
+        # evaluable even when the extraction terminal status is "rejected".
+        # Only genuinely missing/short bodies are excluded.
+        if len(markdown.strip()) < 500:
             skipped.append(
                 {
                     "review_article_id": review_article_id,
