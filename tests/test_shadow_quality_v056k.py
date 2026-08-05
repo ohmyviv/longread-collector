@@ -69,7 +69,7 @@ def test_rejects_financing_promotion() -> None:
         markdown=(
             "# 术也科技完成Pre-A轮融资，用Physical AI打造自驱动实验室\n\n"
             "公司宣布完成Pre-A轮融资。本轮融资由某基金领投，多家机构跟投。"
-            "融资将用于产品研发、市场拓展和团队建设。" + _paragraph("公司介绍", 16)
+            "融资将用于产品研发、市场拓展和团队建设。" + _paragraph("公司介绍", 32)
         ),
         verification_level="B",
         content_chars=5000,
@@ -85,7 +85,7 @@ def test_rejects_student_social_practice_recap() -> None:
         markdown=(
             "# 上理工健康学院社会实践团队走访调研脑机接口领域单位\n\n"
             "暑期社会实践团队在带队老师指导下走访调研多家单位，学生代表分享学习体会。"
-            "供稿单位：健康科学与工程学院。" + _paragraph("实践活动", 18)
+            "供稿单位：健康科学与工程学院。" + _paragraph("实践活动", 32)
         ),
         verification_level="B",
         content_chars=5000,
@@ -101,7 +101,7 @@ def test_rejects_institutional_conference_recap() -> None:
         markdown=(
             "# 生物样本库创新技术研讨活动成功举办\n\n"
             "活动由多家单位主办，学院领导出席并致辞。会议设置主旨报告和三个分论坛，"
-            "多位嘉宾发言，与会代表参加标准启动仪式。" + _paragraph("会议现场", 18)
+            "多位嘉宾发言，与会代表参加标准启动仪式。" + _paragraph("会议现场", 32)
         ),
         verification_level="B",
         content_chars=5000,
@@ -115,7 +115,7 @@ def test_course_rule_ignores_navigation_template() -> None:
         "课程 培训班 报名入口 学费说明\n\n"
         "# 多所高校财政学专业撤并背后\n\n"
         "记者调查多所高校财政学专业调整，采访院校负责人和学者，分析政策背景与就业变化。\n\n"
-        + _paragraph("高校专业调整", 32)
+        + _paragraph("高校专业调整", 80)
     )
     result = classify_candidate_v056k(
         url="https://www.eeo.com.cn/2026/0803/984411.shtml",
@@ -133,7 +133,7 @@ def test_rescues_registered_outlet_full_body_without_date() -> None:
         "# 美联储最底层的运作方式将发生重大转变？如何影响市场\n\n"
         "作者：记者甲\n\n"
         "## 制度变化\n\n"
-        + _paragraph("第一财经采访多名分析师", 34)
+        + _paragraph("第一财经采访多名分析师", 90)
         + "## 市场影响\n\n机构回应称改革将影响利率预期。"
     )
     result = classify_candidate_v056k(
@@ -153,7 +153,7 @@ def test_rescues_shorter_explicit_news_analysis() -> None:
         "# 新闻分析｜AI对网络安全的“双刃剑”效应日益凸显\n\n"
         "新华社记者甲、乙\n\n"
         "## 攻防能力同步提升\n\n"
-        + _paragraph("记者采访网络安全专家", 17)
+        + _paragraph("记者采访网络安全专家", 48)
         + "## 治理需要同步升级\n\n报告称企业需要建立新的风险控制体系。"
     )
     result = classify_candidate_v056k(
@@ -186,7 +186,7 @@ def test_preserves_market_data_card_reject() -> None:
 def test_complete_translation_is_direct_formal_candidate() -> None:
     markdown = (
         "# 激光技术如何为核反应堆提供燃料\n\n"
-        + _paragraph("激光浓缩技术", 30)
+        + _paragraph("激光浓缩技术", 80)
         + "\n原文链接：\nhttps://www.technologyreview.com/2026/07/27/1140798/laser-nuclear-enrichment/\n"
     )
     result = classify_candidate_v056k(
@@ -206,7 +206,7 @@ def test_body_header_date_overrides_template_image_date() -> None:
         "![template](https://example.com/fileftp/2025/07/2025-07-17/logo.png)\n\n"
         "# 郝珂灵：硅谷路径之外，AI的更多可能性\n\n"
         "2026-08-05 11:05:16 来源：中国青年报 作者：吴青潞\n\n"
-        + _paragraph("人工智能报道", 20)
+        + _paragraph("人工智能报道", 32)
     )
     evidence = extract_body_publication_date(markdown)
     assert evidence is not None
@@ -246,7 +246,7 @@ def test_true_stale_article_projects_to_terminal_reject() -> None:
     article = _article(
         url=discovered.url,
         title=discovered.title,
-        markdown="# What It Means To Be Sicilian\n\n" + _paragraph("Sicilian feature", 28),
+        markdown="# What It Means To Be Sicilian\n\n" + _paragraph("Sicilian feature", 48),
         published_at="2026-07-17T00:00:00+08:00",
     )
     result = apply_post_extraction_gates_v056k(
@@ -263,7 +263,7 @@ def test_true_stale_article_projects_to_terminal_reject() -> None:
 def test_translation_original_link_corrects_bad_site_metadata() -> None:
     markdown = (
         "# 激光技术如何为核反应堆提供燃料\n\n"
-        + _paragraph("核燃料供应分析", 28)
+        + _paragraph("核燃料供应分析", 60)
         + "\n原文链接：\nhttps://www.technologyreview.com/2026/07/27/1140798/laser-nuclear-enrichment/\n"
     )
     discovered = DiscoveredURL(
