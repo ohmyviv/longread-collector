@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime
@@ -13,15 +14,22 @@ from .post_freshness_v056h import (
     POST_FRESHNESS_VERSION,
     evaluate_post_extraction_freshness,
 )
-from .publication_date_v056k import BODY_DATE_VERSION, extract_body_publication_date
+from .publication_date_v056k import (
+    BODY_DATE_VERSION,
+    BodyDateEvidence,
+    extract_body_publication_date,
+)
 
 POST_EXTRACTION_GATE_VERSION = "post-extraction-gates-v0.5.6k"
+BodyDateExtractor = Callable[[str], BodyDateEvidence | None]
 
 
 def _evaluation_item(
     discovered: DiscoveredURL,
     article: ExtractedArticle,
-) -> tuple[DiscoveredURL, Any]:
+    *,
+    body_date_extractor: BodyDateExtractor,
+) -> tuple[DiscoveredURL, BodyDateEvidence | None]:
     metadata = deepcopy(discovered.metadata)
     for key, value in article.metadata.items():
         if isinstance(value, dict) and isinstance(metadata.get(key), dict):
@@ -29,7 +37,7 @@ def _evaluation_item(
         else:
             metadata[key] = deepcopy(value)
 
-    body_date = extract_body_publication_date(article.content_markdown)
+    body_date = body_date_extractor(article.content_markdown)
     published_at = (
         body_date.value.isoformat()
         if body_date is not None
@@ -85,6 +93,7 @@ def apply_post_extraction_gates_v056k(
     article: ExtractedArticle,
     *,
     now: datetime | None = None,
+    body_date_extractor: BodyDateExtractor | None = None,
 ) -> dict[str, Any]:
     """Apply the only authoritative terminal page/freshness state.
 
@@ -92,9 +101,19 @@ def apply_post_extraction_gates_v056k(
     legitimately refine page intent and source relationships. This function is
     therefore called after v0.5.6k classification and projects the final gate
     result back to the top-level article fields.
+
+    ``body_date_extractor`` is injectable so the release pipeline can use the
+    final article-header parser without mutating module-global functions. Tests
+    that monkeypatch ``extract_body_publication_date`` remain supported when no
+    explicit extractor is supplied.
     """
 
-    item, body_date = _evaluation_item(discovered, article)
+    extractor = body_date_extractor or extract_body_publication_date
+    item, body_date = _evaluation_item(
+        discovered,
+        article,
+        body_date_extractor=extractor,
+    )
     page = evaluate_page_gate_policy(item)
     freshness = evaluate_post_extraction_freshness(item, now=now)
 
