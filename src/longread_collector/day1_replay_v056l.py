@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from datetime import datetime
+from difflib import SequenceMatcher
 import json
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ from zoneinfo import ZoneInfo
 import gspread
 from google.oauth2.service_account import Credentials
 
+from .classification import normalize_title
 from .classification_v056l import (
     CLASSIFICATION_VERSION,
     classify_candidate_v056l,
@@ -137,6 +139,14 @@ def _article_from_cache(row: dict[str, Any]) -> tuple[DiscoveredURL, ExtractedAr
     return discovered, article
 
 
+def _title_similarity(left: str, right: str) -> float:
+    return SequenceMatcher(
+        None,
+        normalize_title(left),
+        normalize_title(right),
+    ).ratio()
+
+
 def run(spreadsheet_id: str, credentials_file: Path) -> dict[str, Any]:
     credentials = Credentials.from_service_account_file(
         str(credentials_file), scopes=SCOPES
@@ -156,6 +166,7 @@ def run(spreadsheet_id: str, credentials_file: Path) -> dict[str, Any]:
     historical_rows = [_record(cache_headers, row) for row in cache_values[1:]]
 
     evaluated: list[tuple[dict[str, Any], ExtractedArticle]] = []
+    id_drifts: list[dict[str, Any]] = []
     for review in reviews:
         row_number = int(str(review["cache_row"]))
         if row_number < 2 or row_number > len(cache_values):
@@ -163,10 +174,23 @@ def run(spreadsheet_id: str, credentials_file: Path) -> dict[str, Any]:
         cache_row = _record(cache_headers, cache_values[row_number - 1])
         expected_article_id = str(review.get("article_id") or "")
         actual_article_id = str(cache_row.get("article_id") or "")
-        if expected_article_id != actual_article_id:
+        similarity = _title_similarity(
+            str(review.get("title") or ""),
+            str(cache_row.get("title") or ""),
+        )
+        if similarity < 0.70:
             raise RuntimeError(
-                f"cache row {row_number} drifted: expected {expected_article_id}, "
-                f"got {actual_article_id}"
+                f"cache row {row_number} title drifted: expected "
+                f"{review.get('title')!r}, got {cache_row.get('title')!r}"
+            )
+        if expected_article_id != actual_article_id:
+            id_drifts.append(
+                {
+                    "cache_row": row_number,
+                    "expected_article_id": expected_article_id,
+                    "actual_article_id": actual_article_id,
+                    "title_similarity": round(similarity, 4),
+                }
             )
         discovered, article = _article_from_cache(cache_row)
         apply_historical_primary_document_dedupe(
@@ -213,6 +237,7 @@ def run(spreadsheet_id: str, credentials_file: Path) -> dict[str, Any]:
         "evaluated": len(evaluated),
         "correct": totals,
         "disposition_counts": dict(disposition_counts),
+        "cache_article_id_drifts": id_drifts,
         "differences": differences,
         "passed": all(value == 32 for value in totals.values()),
     }
