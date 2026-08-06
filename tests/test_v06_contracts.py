@@ -46,3 +46,22 @@ def test_v06_child_collections_are_tuples() -> None:
     )
     assert isinstance(record.published_at_hints, tuple)
     assert isinstance(record.evidence, tuple)
+
+
+def test_v06_nested_metadata_is_deeply_frozen() -> None:
+    raw = {"route": {"attempts": ["rss", "html"]}}
+    record = DiscoveryRecord(
+        schema_version="v06-contracts-v1",
+        stage_version="discovery-v0",
+        run_id="run-1",
+        item_id="item-1",
+        discovery_id="discovery-1",
+        url="https://example.com/article",
+        raw_metadata=raw,
+    )
+
+    raw["route"]["attempts"].append("firecrawl")
+    assert record.raw_metadata["route"]["attempts"] == ("rss", "html")
+
+    with pytest.raises(TypeError):
+        record.raw_metadata["new"] = "value"  # type: ignore[index]

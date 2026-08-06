@@ -4,7 +4,28 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Any, Mapping
+
+
+def _deep_freeze(value: Any) -> Any:
+    """Recursively freeze JSON-like values held by immutable contracts."""
+    if isinstance(value, Mapping):
+        return MappingProxyType(
+            {str(key): _deep_freeze(item) for key, item in value.items()}
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(_deep_freeze(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_deep_freeze(item) for item in value)
+    return value
+
+
+def _freeze_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
+    frozen = _deep_freeze(value)
+    if not isinstance(frozen, Mapping):
+        raise TypeError("expected a mapping")
+    return frozen
 
 
 class StageName(StrEnum):
@@ -144,6 +165,9 @@ class Evidence:
     excerpt: str = ""
     extractor: str = ""
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "value", _deep_freeze(self.value))
+
 
 @dataclass(frozen=True, slots=True)
 class RunContext:
@@ -178,6 +202,9 @@ class DiscoveryRecord:
     raw_metadata: Mapping[str, Any] = field(default_factory=dict)
     evidence: tuple[Evidence, ...] = ()
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "raw_metadata", _freeze_mapping(self.raw_metadata))
+
 
 @dataclass(frozen=True, slots=True)
 class GateDecision:
@@ -191,6 +218,13 @@ class GateDecision:
     estimated_acquisition_cost: float = 0.0
     priority_features: Mapping[str, float] = field(default_factory=dict)
     evidence: tuple[Evidence, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "priority_features",
+            _freeze_mapping(self.priority_features),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,6 +300,18 @@ class CanonicalArticle:
     freshness_facts: Mapping[str, Any] = field(default_factory=dict)
     confidence_by_field: Mapping[str, float] = field(default_factory=dict)
     evidence: tuple[Evidence, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "freshness_facts",
+            _freeze_mapping(self.freshness_facts),
+        )
+        object.__setattr__(
+            self,
+            "confidence_by_field",
+            _freeze_mapping(self.confidence_by_field),
+        )
 
 
 @dataclass(frozen=True, slots=True)
