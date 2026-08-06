@@ -1,9 +1,9 @@
 """Cross-run duplicate handling for official primary documents.
 
-Batch duplicate clustering only sees the current extraction batch. Official
-statements are frequently copied across ministry, embassy and consulate sites
-on different days, so an exact normalized document title must also be checked
-against the historical cache before the current batch is persisted.
+The historical cache is loaded once per collector run and then reused across
+initial and reserve extraction batches. Newly accepted primary documents are
+also added to an in-memory run index, so later reserve items cannot duplicate
+an earlier item from the same run.
 """
 
 from __future__ import annotations
@@ -54,6 +54,24 @@ def _historical_preference(row: dict[str, Any]) -> tuple[int, int]:
     return _preference(domain, relationship)
 
 
+def _article_row(article: ExtractedArticle) -> dict[str, Any]:
+    return {
+        "article_id": article.article_id,
+        "title": article.title,
+        "url": article.url,
+        "url_canonical": article.url_canonical,
+        "page_type": article.page_type,
+        "content_type": article.content_type,
+        "special_candidate_type": article.special_candidate_type,
+        "candidate_disposition": article.candidate_disposition,
+        "source_relationship": article.source_relationship,
+        "original_publisher": article.original_publisher,
+        "original_url": article.original_url,
+        "canonical_source": article.canonical_source,
+        "first_seen_at_bj": article.first_seen_at_bj,
+    }
+
+
 def apply_historical_primary_document_dedupe(
     pairs: Iterable[tuple[DiscoveredURL, ExtractedArticle]],
     historical_rows: Iterable[dict[str, Any]],
@@ -86,7 +104,8 @@ def apply_historical_primary_document_dedupe(
             continue
         current_domain = _domain(article.url_canonical or article.url)
         matches = [
-            row for row in index.get(key, [])
+            row
+            for row in index.get(key, [])
             if str(row.get("article_id", "")) != article.article_id
             and _domain(str(row.get("url_canonical") or row.get("url") or ""))
             != current_domain
@@ -97,8 +116,6 @@ def apply_historical_primary_document_dedupe(
         best_preference = max(_historical_preference(row) for row in matches)
         current_preference = _preference(current_domain, article.source_relationship)
         if current_preference > best_preference:
-            # The current page is a stronger original than every historical
-            # carrier. Keep it and let future carriers point back to it.
             continue
         preferred = [row for row in matches if _historical_preference(row) == best_preference]
         original = sorted(
@@ -145,29 +162,75 @@ def apply_historical_primary_document_dedupe(
     return changed
 
 
+class HistoricalPrimaryDocumentDedupe:
+    """Lazy, run-scoped history loader and duplicate index."""
+
+    def __init__(self, store: Any) -> None:
+        self.store = store
+        self._loaded = False
+        self._historical_rows: list[dict[str, Any]] = []
+        self._run_rows: list[dict[str, Any]] = []
+        self.load_error = ""
+        self.load_count = 0
+
+    def reset(self) -> None:
+        self._loaded = False
+        self._historical_rows = []
+        self._run_rows = []
+        self.load_error = ""
+        self.load_count = 0
+
+    def _load_once(self) -> None:
+        if self._loaded:
+            return
+        self._loaded = True
+        self.load_count += 1
+        try:
+            worksheet = self.store.book.worksheet("article_cache")
+            self._historical_rows = [dict(row) for row in worksheet.get_all_records()]
+        except Exception as exc:  # provider failures must not corrupt a run
+            self.load_error = f"{type(exc).__name__}: {exc}"[:500]
+            self._historical_rows = []
+
+    def apply(self, pairs: Iterable[tuple[DiscoveredURL, ExtractedArticle]]) -> int:
+        pair_list = list(pairs)
+        self._load_once()
+        if self.load_error:
+            for _, article in pair_list:
+                article.metadata.setdefault("historical_dedupe", {}).update(
+                    {
+                        "version": HISTORICAL_DEDUPE_VERSION,
+                        "status": "unavailable",
+                        "error": self.load_error,
+                        "load_count": self.load_count,
+                    }
+                )
+            return 0
+
+        changed = apply_historical_primary_document_dedupe(
+            pair_list,
+            [*self._historical_rows, *self._run_rows],
+        )
+        for _, article in pair_list:
+            if _is_primary_document(article) and article.candidate_disposition != "reject":
+                self._run_rows.append(_article_row(article))
+            article.metadata.setdefault("historical_dedupe", {}).setdefault(
+                "load_count", self.load_count
+            )
+        return changed
+
+
+# Compatibility wrapper for callers outside the production pipeline.
 def apply_historical_primary_document_dedupe_from_store(
     store: Any,
     pairs: Iterable[tuple[DiscoveredURL, ExtractedArticle]],
 ) -> int:
-    pair_list = list(pairs)
-    try:
-        worksheet = store.book.worksheet("article_cache")
-        rows = worksheet.get_all_records()
-    except Exception as exc:  # provider failures must not corrupt a run
-        for _, article in pair_list:
-            article.metadata.setdefault("historical_dedupe", {}).update(
-                {
-                    "version": HISTORICAL_DEDUPE_VERSION,
-                    "status": "unavailable",
-                    "error": f"{type(exc).__name__}: {exc}"[:500],
-                }
-            )
-        return 0
-    return apply_historical_primary_document_dedupe(pair_list, rows)
+    return HistoricalPrimaryDocumentDedupe(store).apply(pairs)
 
 
 __all__ = [
     "HISTORICAL_DEDUPE_VERSION",
+    "HistoricalPrimaryDocumentDedupe",
     "apply_historical_primary_document_dedupe",
     "apply_historical_primary_document_dedupe_from_store",
 ]
