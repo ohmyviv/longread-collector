@@ -1,0 +1,168 @@
+name: v0.5.6m production-cache replay
+
+on:
+  pull_request:
+    paths:
+      - 'src/longread_collector/classification_v056m.py'
+      - 'src/longread_collector/publication_date_v056m.py'
+      - 'src/longread_collector/post_extraction_gates_v056m.py'
+      - '.github/workflows/v056m-cache-replay.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  replay-cache:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install .
+      - name: Prepare Google credentials
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON_B64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_B64 }}
+        run: |
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON_B64"
+          echo "$GOOGLE_SERVICE_ACCOUNT_JSON_B64" | base64 -d > /tmp/google-service-account.json
+          chmod 600 /tmp/google-service-account.json
+      - name: Replay three exact Day 1 cache bodies
+        run: |
+          python - <<'PY'
+          from datetime import datetime
+          import json
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          import gspread
+          from google.oauth2.service_account import Credentials
+
+          from longread_collector.classification_v056m import classify_candidate_v056m
+          from longread_collector.content_identity_v056j import evaluate_content_identity
+          from longread_collector.models import DiscoveredURL, ExtractedArticle
+          from longread_collector.post_extraction_gates_v056m import apply_post_extraction_gates_v056m
+
+          SHEET_ID = "1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4"
+          SCOPES = [
+              "https://www.googleapis.com/auth/spreadsheets.readonly",
+              "https://www.googleapis.com/auth/drive.readonly",
+          ]
+          BJ = ZoneInfo("Asia/Shanghai")
+
+          credentials = Credentials.from_service_account_file(
+              "/tmp/google-service-account.json", scopes=SCOPES
+          )
+          worksheet = gspread.authorize(credentials).open_by_key(SHEET_ID).worksheet("article_cache")
+          ranges = ["A1:AV1", "A711:AV711", "A1042:AV1042", "A1043:AV1043"]
+          values = worksheet.batch_get(ranges)
+          headers = values[0][0]
+
+          def row_dict(block):
+              row = block[0]
+              return dict(zip(headers, row + [""] * max(0, len(headers) - len(row))))
+
+          rows = {
+              711: row_dict(values[1]),
+              1042: row_dict(values[2]),
+              1043: row_dict(values[3]),
+          }
+
+          def classify(row):
+              markdown = str(row.get("content_markdown") or "")
+              title = str(row.get("title") or "")
+              identity = evaluate_content_identity(title=title, markdown=markdown)
+              result = classify_candidate_v056m(
+                  url=str(row.get("url") or row.get("url_canonical") or ""),
+                  title=title,
+                  description=str(row.get("description") or ""),
+                  author=str(row.get("author") or ""),
+                  markdown=markdown,
+                  published_at=str(row.get("published_at") or ""),
+                  verification_level=str(row.get("verification_level") or ""),
+                  content_chars=identity.body_prose_chars,
+              )
+              return identity, result
+
+          report = []
+
+          row = rows[711]
+          identity, result = classify(row)
+          discovered = DiscoveredURL(
+              url=str(row.get("url") or row.get("url_canonical") or ""),
+              title=str(row.get("title") or ""),
+              published_at=str(row.get("published_at") or ""),
+          )
+          article = ExtractedArticle(
+              article_id=str(row.get("article_id") or "nfcmag-old"),
+              url=discovered.url,
+              url_canonical=str(row.get("url_canonical") or discovered.url),
+              domain=str(row.get("domain") or ""),
+              title=discovered.title,
+              author=str(row.get("author") or ""),
+              published_at=discovered.published_at,
+              extraction_status="success",
+              verification_level=str(row.get("verification_level") or "B"),
+              content_markdown=str(row.get("content_markdown") or ""),
+              content_chars=int(row.get("content_chars") or 0),
+              page_role=result.page_role,
+              page_type=result.page_type,
+              content_type=result.content_type,
+              candidate_disposition=result.candidate_disposition,
+              source_relationship=result.source_relationship,
+              source_action=result.source_action,
+              duplicate_type=result.duplicate_type,
+              classification_reason=result.reason,
+              eligible_for_editor=result.eligible_for_editor,
+              metadata={"content_metrics": {"body_prose_chars": identity.body_prose_chars}},
+          )
+          terminal = apply_post_extraction_gates_v056m(
+              discovered,
+              article,
+              now=datetime(2026, 8, 6, 14, 30, tzinfo=BJ),
+          )
+          report.append({
+              "cache_row": 711,
+              "title": article.title,
+              "published_at": article.published_at,
+              "disposition": article.candidate_disposition,
+              "reason": article.classification_reason,
+              "freshness_rejected": terminal.get("freshness_rejected"),
+              "passed": article.candidate_disposition == "reject" and article.published_at.startswith("2026-02-23"),
+          })
+
+          for cache_row, expected_disposition, expected_type in (
+              (1042, "formal_candidate", "reported_feature"),
+              (1043, "reject", "training_event_recap"),
+          ):
+              row = rows[cache_row]
+              identity, result = classify(row)
+              report.append({
+                  "cache_row": cache_row,
+                  "title": row.get("title", ""),
+                  "body_prose_chars": identity.body_prose_chars,
+                  "disposition": result.candidate_disposition,
+                  "content_type": result.content_type,
+                  "source_relationship": result.source_relationship,
+                  "reason": result.reason,
+                  "passed": result.candidate_disposition == expected_disposition and result.content_type == expected_type,
+              })
+
+          Path("artifacts").mkdir(exist_ok=True)
+          Path("artifacts/v056m-cache-replay.json").write_text(
+              json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+          )
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          if not all(item["passed"] for item in report):
+              raise SystemExit(1)
+          PY
+      - name: Upload cache evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v056m-cache-replay
+          path: artifacts/v056m-cache-replay.json
+          if-no-files-found: warn
