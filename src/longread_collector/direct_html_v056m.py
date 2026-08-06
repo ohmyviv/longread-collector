@@ -40,7 +40,7 @@ _SCRIPT_JSON_RE = re.compile(
 )
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"[ \t\r\f\v]+")
-_H1_RE = re.compile(r"(?m)^\s*#\s+\S")
+_H1_RE = re.compile(r"\A\s*#\s+\S")
 _STOP_HEADING_RE = re.compile(
     r"^(?:我要评论|热点|最新|热议|相关推荐|相关阅读|推荐阅读|更多推荐|直播)$",
     re.I,
