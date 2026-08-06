@@ -130,9 +130,9 @@ def test_complete_transparent_republication_is_formal() -> None:
         "来源：经济日报\n\n"
         "原文链接：[经济日报原文](https://example.com/original/ai-foundation)\n\n"
         "## 数据基础\n\n"
-        + _long_body("人工智能数据基础", 10)
+        + _long_body("人工智能数据基础", 20)
         + "\n\n## 算力和算法\n\n"
-        + _long_body("算力算法分析", 10)
+        + _long_body("算力算法分析", 20)
     )
     result = classify_candidate_v056m(
         url="https://example-republisher.com/article/ai-foundation",
@@ -147,6 +147,25 @@ def test_complete_transparent_republication_is_formal() -> None:
     assert result.duplicate_type == "syndicated_republish"
     assert result.source_action == "retain_with_source_label"
     assert result.original_publisher == "经济日报"
+
+
+def test_short_transparent_republication_is_not_auto_promoted() -> None:
+    title = "底层突破筑牢人工智能技术根基"
+    markdown = (
+        f"# {title}\n\n"
+        "来源：经济日报\n\n"
+        "原文链接：[经济日报原文](https://example.com/original/ai-foundation)\n\n"
+        + _long_body("人工智能数据基础", 5)
+    )
+    result = classify_candidate_v056m(
+        url="https://example-republisher.com/article/ai-foundation-short",
+        title=title,
+        markdown=markdown,
+        published_at="2026-08-06",
+        verification_level="C",
+        content_chars=len(markdown),
+    )
+    assert result.reason != "complete_transparent_republication_v056m"
 
 
 def test_magazine_issue_landing_is_rejected_before_extraction() -> None:
