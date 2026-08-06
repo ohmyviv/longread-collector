@@ -35,7 +35,7 @@ def test_dated_external_publisher_link_marks_complete_republication() -> None:
         verification_level="C",
         content_chars=len(markdown),
     )
-    assert result.candidate_disposition == "formal_candidate"
+    assert result.candidate_disposition == "formal_candidate", result
     assert result.source_relationship == "secondary_republish"
     assert result.original_publisher == "经济日报"
     assert result.source_action == "retain_with_source_label"
