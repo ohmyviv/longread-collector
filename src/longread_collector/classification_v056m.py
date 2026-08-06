@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import urlsplit
 
 from .classification import ClassificationResult, normalize_title
 from .classification_v056l import (
@@ -32,6 +33,15 @@ _REGULATORY_TITLE_RE = re.compile(
 _SOURCE_LINE_RE = re.compile(
     r"(?:来源|原载|转载自|本文原载|稿源)\s*[:：]\s*"
     r"(?P<publisher>[^|\n]{2,80})",
+    re.I,
+)
+_HEADER_PUBLISHER_LINK_RE = re.compile(
+    r"20\d{2}年\d{1,2}月\d{1,2}日(?:\s+\d{1,2}:\d{2})?\s*"
+    r"\[(?P<publisher>[^\]\n]{2,60})\]\((?P<url>https?://[^)\s]+)\)",
+    re.I,
+)
+_PARTNER_REPOST_RE = re.compile(
+    r"(?:系|为)?转载自(?:合作)?媒体|转载自合作媒体|合作媒体转载",
     re.I,
 )
 _ORIGINAL_LINK_RE = re.compile(
@@ -79,6 +89,29 @@ _INVESTIGATIVE_FOLLOWUP_BODY_MARKERS = (
 
 def _count(patterns: tuple[re.Pattern[str], ...], text: str) -> int:
     return sum(1 for pattern in patterns if pattern.search(text))
+
+
+def _domain(url: str) -> str:
+    return urlsplit(str(url or "")).netloc.lower().removeprefix("www.")
+
+
+def _article_header_window(text: str, title: str) -> str:
+    normalized = str(title or "").strip()
+    positions = [position for position in (text.find(f"# {normalized}"), text.find(normalized)) if position >= 0]
+    start = min(positions) if positions else 0
+    return text[start : start + 2200]
+
+
+def _header_publisher(text: str, *, title: str, hosting_url: str) -> str:
+    window = _article_header_window(text, title)
+    match = _HEADER_PUBLISHER_LINK_RE.search(window)
+    if not match:
+        return ""
+    target_domain = _domain(match.group("url"))
+    hosting_domain = _domain(hosting_url)
+    if not target_domain or target_domain == hosting_domain:
+        return ""
+    return " ".join(match.group("publisher").split()).strip(" -*_[]（）()")[:80]
 
 
 def _reject(reason: str, page_type: str, content_type: str) -> ClassificationResult:
@@ -130,14 +163,14 @@ def _republish_formal(
     )
 
 
-def _publisher(text: str) -> str:
-    match = _SOURCE_LINE_RE.search(text[:7000])
-    if not match:
-        return ""
-    value = " ".join(match.group("publisher").split()).strip(" -*_[]（）()")
-    # Avoid accidentally swallowing a byline/date sequence.
-    value = re.split(r"(?:作者|记者|日期|发布时间)\s*[:：]", value, maxsplit=1)[0].strip()
-    return value[:80]
+def _publisher(text: str, *, title: str, hosting_url: str) -> str:
+    match = _SOURCE_LINE_RE.search(text[:10000])
+    if match:
+        value = " ".join(match.group("publisher").split()).strip(" -*_[]（）()")
+        value = re.split(r"(?:作者|记者|日期|发布时间)\s*[:：]", value, maxsplit=1)[0].strip()
+        if value:
+            return value[:80]
+    return _header_publisher(text, title=title, hosting_url=hosting_url)
 
 
 def classify_candidate_v056m(
@@ -187,24 +220,29 @@ def classify_candidate_v056m(
         identity.title_similarity >= 0.45
         or (len(normalized_title) >= 8 and normalized_title in normalize_title(text[:14000]))
     )
-    disclosure = bool(_REPOST_DISCLOSURE_RE.search(text[:10000]))
+    header_publisher = _header_publisher(text, title=resolved_title, hosting_url=url)
+    disclosure = bool(
+        _REPOST_DISCLOSURE_RE.search(text[:16000])
+        or _PARTNER_REPOST_RE.search(text[:20000])
+        or header_publisher
+    )
     translated = bool(_TRANSLATION_RE.search(text[:12000]) and _ORIGINAL_LINK_RE.search(text[:16000]))
-    publisher = _publisher(text)
+    publisher = _publisher(text, title=resolved_title, hosting_url=url)
     strong_body = (
         identity.body_prose_chars >= 3400
         and len(paragraphs) >= 5
         and title_evidence
-        and len(_EDITORIAL_RE.findall(text[:18000])) >= 2
+        and (
+            len(_EDITORIAL_RE.findall(text[:18000])) >= 2
+            or identity.heading_count >= 3
+            or (identity.body_prose_chars >= 4500 and len(paragraphs) >= 10)
+        )
     )
     unsafe = bool(
         _LOW_VALUE_RE.search("\n".join((resolved_title, text[:7000])))
         or _PROMOTIONAL_RE.search("\n".join((resolved_title, text[:7000])))
     )
 
-    # A focused follow-up to a previously published investigation can be
-    # editorially substantive even below the general long-form threshold. The
-    # title must identify both the investigation and its follow-up, and the body
-    # must contain a byline plus several distinct official-response actions.
     if (
         result.candidate_disposition == "reject"
         and result.reason in {"short_news_brief_v056j", "insufficient_editorial_evidence"}
@@ -220,9 +258,6 @@ def classify_candidate_v056m(
             content_type="reported_investigative_followup",
         )
 
-    # Transparent complete republications are valid formal candidates. This
-    # recovery requires both disclosure and strong article-body evidence, and
-    # it cannot override deterministic low-value/event/promotion signals.
     if (
         disclosure
         and strong_body
@@ -246,9 +281,6 @@ def classify_candidate_v056m(
             translated=translated,
         )
 
-    # Some complete translations were previously misrouted into the special
-    # document lane. An explicit original link plus translation disclosure and
-    # a complete article body is enough to restore the normal formal lane.
     if (
         result.candidate_disposition == "special_candidate"
         and translated
