@@ -26,6 +26,12 @@ _LIVE_RESULTS_BODY_RE = re.compile(
     r"live vote|reporting results|开票进度|实时更新)",
     re.I,
 )
+_POETRY_RE = re.compile(r"(?:/poems?(?:/|$)|[-_]poem(?:[/?#]|$)|\[Poems\])", re.I)
+_IN_CONTENT_PAYWALL_RE = re.compile(
+    r"(?:your window is closing|PAYWALL_IN_CONTENT_BARRIER|unlock this story|"
+    r"don[’']t lose these views|get full access for|already a subscriber\?\s*\[?Sign In)",
+    re.I,
+)
 _COURSE_TITLE_RE = re.compile(
     r"(?:\bcourse\b|training program|certificate program|课程|培训班|研修班)",
     re.I,
@@ -76,6 +82,7 @@ _DATE_LINE_RE = re.compile(
 )
 _INTERVIEW_LABEL_RE = re.compile(r"(?m)^#{2,4}\s*INTERVIEW\s*$", re.I)
 _QA_RE = re.compile(r"(?m)^\*\*(?:e360|[^*:\n]{2,60})\s*:\*\*", re.I)
+_FIRST_PARTY_PUBLICATION_RE = re.compile(r"(?m)^##\s+Published at the \[.+?\]", re.I)
 _EDITORIAL_PROSE_RE = re.compile(
     r"(?:according to|told |said |reported|analysis|research|data show|"
     r"采访|记者|数据显示|研究显示|分析|指出|表示)",
@@ -159,8 +166,14 @@ def classify_candidate_v056l(
     ):
         return _reject("live_results_interactive_v056l", "interactive_data", "live_election_results")
 
+    if _POETRY_RE.search("\n".join((url, text[:8000]))):
+        return _reject("poetry_not_editorial_longread_v056l", "poetry", "poem")
+
+    if _IN_CONTENT_PAYWALL_RE.search(text):
+        return _reject("paywalled_excerpt_v056l", "article", "paywalled_excerpt")
+
     if _COURSE_TITLE_RE.search(resolved_title) and _count(_COURSE_BODY_MARKERS, text[:30000]) >= 2:
-        return _reject("course_promotion_v056l", "course_or_training", "course_promotion")
+        return _reject("course_promotion_v056l", "course", "course_promotion")
 
     if _REPORT_TITLE_RE.search(resolved_title) and _count(_GATED_REPORT_MARKERS, text[:30000]) >= 3:
         return _reject(
@@ -181,8 +194,6 @@ def classify_candidate_v056l(
 
     clean_author = sanitize_author_v056l(author)
 
-    # A clearly labelled editorial interview is a first-party article, even
-    # when it cites academic papers. Freshness is applied after classification.
     if (
         _INTERVIEW_LABEL_RE.search(text[:8000])
         and len(_QA_RE.findall(text[:20000])) >= 3
@@ -190,6 +201,12 @@ def classify_candidate_v056l(
         and _title_present(resolved_title, text)
     ):
         result = _formal("structured_editorial_interview_v056l", "interview")
+    elif (
+        _FIRST_PARTY_PUBLICATION_RE.search(text[:16000])
+        and identity.body_prose_chars >= 3000
+        and _title_present(resolved_title, text)
+    ):
+        result = _formal("first_party_published_feature_v056l", "reported_feature")
     else:
         result = _base_classify(
             url=url,
@@ -214,6 +231,7 @@ def classify_candidate_v056l(
         and title_evidence
         and paragraph_count >= 6
         and (publication_evidence or len(_EDITORIAL_PROSE_RE.findall(text[:16000])) >= 2)
+        and not _IN_CONTENT_PAYWALL_RE.search(text)
         and not (_PAYWALL_RE.search(text[:6000]) and identity.body_prose_chars < 5000)
     ):
         result = _formal("complete_editorial_body_metadata_recovery_v056l")
