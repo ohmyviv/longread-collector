@@ -33,6 +33,8 @@ def apply_post_extraction_gates_v056l(
         "reject_reason": article.reject_reason,
         "classification_reason": article.classification_reason,
         "page_type": article.page_type,
+        "content_type": article.content_type,
+        "source_relationship": article.source_relationship,
     }
     result = apply_post_extraction_gates_v056k(
         discovered,
@@ -47,11 +49,6 @@ def apply_post_extraction_gates_v056l(
     if isinstance(evidence, dict) and evidence.get("version"):
         freshness["body_date_version"] = evidence["version"]
 
-    # The base 8-14 day track infers depth from discovery title/description.
-    # After extraction, a complete formal article body is stronger evidence.
-    # This exception is limited to high-confidence body dates, calendar ages
-    # within 8-14 days, and a final formal classification. It cannot rescue a
-    # truly >14-day article or any deterministic non-content classification.
     try:
         age_days = int(freshness.get("freshness_age_days"))
     except (TypeError, ValueError):
@@ -75,6 +72,8 @@ def apply_post_extraction_gates_v056l(
         article.reject_reason = str(previous["reject_reason"])
         article.classification_reason = str(previous["classification_reason"])
         article.page_type = str(previous["page_type"])
+        article.content_type = str(previous["content_type"])
+        article.source_relationship = str(previous["source_relationship"])
         freshness.update(
             {
                 "decision_allowed": True,
@@ -93,11 +92,18 @@ def apply_post_extraction_gates_v056l(
                 "body_depth_override_age_days": age_days,
             }
         )
-        result = {
-            **result,
-            "freshness_rejected": False,
-            "body_depth_override": True,
-        }
+        result = {**result, "freshness_rejected": False, "body_depth_override": True}
+
+    # Once freshness is the terminal rejection reason, there is no remaining
+    # source-chase or retention action to perform for an otherwise original
+    # article. Clear stale actions so top-level fields describe one executable
+    # terminal state rather than the pre-freshness classification intent.
+    if result.get("freshness_rejected") is True and article.candidate_disposition == "reject":
+        if str(previous["source_relationship"]) == "original":
+            article.source_relationship = "original"
+        article.source_action = "none"
+        article.duplicate_type = "none"
+        gate["terminal_source_action_cleared"] = True
     return result
 
 
