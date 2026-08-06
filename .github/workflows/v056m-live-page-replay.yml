@@ -39,11 +39,24 @@ jobs:
               ("医保暗访后续", "https://www.bjnews.com.cn/detail/1785414195169195.html", "2026-07-30 20:23", 600),
           ]
 
+          async def read_with_retry(url):
+              errors = []
+              for attempt in range(1, 4):
+                  try:
+                      data, meta = await read_direct_html_v056m(url, timeout=30.0)
+                      meta["validation_attempt"] = attempt
+                      return data, meta, errors
+                  except Exception as exc:
+                      errors.append(f"{type(exc).__name__}: {exc}")
+                      if attempt < 3:
+                          await asyncio.sleep(attempt)
+              raise RuntimeError(" | ".join(errors))
+
           async def main():
               results = []
               for label, url, published_at, minimum in pages:
                   try:
-                      data, meta = await read_direct_html_v056m(url, timeout=30.0)
+                      data, meta, transient_errors = await read_with_retry(url)
                       markdown = str(data.get("markdown") or "")
                       title = str(data.get("title") or "")
                       identity = evaluate_content_identity(title=title, markdown=markdown)
@@ -61,18 +74,17 @@ jobs:
                           "label": label,
                           "url": url,
                           "title": title,
-                          "author": data.get("author", ""),
-                          "published_at": data.get("published_at", ""),
                           "body_chars": len(markdown),
                           "body_prose_chars": identity.body_prose_chars,
                           "title_similarity": identity.title_similarity,
                           "minimum": minimum,
                           "method": (data.get("metadata") or {}).get("direct_html_method", ""),
                           "http_status": meta.get("http_status"),
+                          "validation_attempt": meta.get("validation_attempt"),
+                          "transient_errors": transient_errors,
                           "candidate_disposition": classified.candidate_disposition,
                           "content_type": classified.content_type,
                           "classification_reason": classified.reason,
-                          "first_lines": markdown.splitlines()[:30],
                           "passed": (
                               len(markdown) >= minimum
                               and bool(title)
