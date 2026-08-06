@@ -1,4 +1,4 @@
-"""v0.5.6 PR-D: separated candidate types and strong source relationships."""
+"""v0.5.6 PR-D pipeline with v0.5.6l natural-holdout calibration."""
 
 from __future__ import annotations
 
@@ -10,19 +10,24 @@ from . import pipeline_v05 as _pipeline_v05
 from . import pipeline_v056b as _pipeline_v056b
 from . import quality as _quality
 from .classification import ClassificationResult
-from .classification_v056k_final import (
+from .classification_v056l import (
     CLASSIFICATION_VERSION,
-    classify_candidate_v056k_final,
+    classify_candidate_v056l,
+    sanitize_author_v056l,
 )
 from .content_identity_v056j import CONTENT_IDENTITY_VERSION, evaluate_content_identity
 from .extraction import FallbackBudget
+from .historical_dedupe_v056l import (
+    HISTORICAL_DEDUPE_VERSION,
+    HistoricalPrimaryDocumentDedupe,
+)
 from .models import DiscoveredURL, ExtractedArticle
 from .pipeline_v056c import NativeCollectorPipeline as _BasePipeline
-from .post_extraction_gates_v056k import (
+from .post_extraction_gates_v056l import (
     POST_EXTRACTION_GATE_VERSION,
-    apply_post_extraction_gates_v056k,
+    apply_post_extraction_gates_v056l,
 )
-from .publication_date_v056k_final import extract_body_publication_date_final
+from .publication_date_v056l import extract_body_publication_date_v056l
 from .source_chase_identity_v056j import SOURCE_CHASE_IDENTITY_VERSION
 from .source_chase_v056 import SOURCE_CHASE_VERSION, build_source_chase_queries_v056
 from .source_relationship_v056 import (
@@ -31,14 +36,11 @@ from .source_relationship_v056 import (
     evidence_dict,
 )
 
-FINAL_CALIBRATION_VERSION = "shadow-quality-final-v0.5.6k"
+FINAL_CALIBRATION_VERSION = "shadow-quality-final-v0.5.6l"
 
-# v0.5.5 installs its classifier during module import. PR-D replaces the
-# callable after PR-C is fully loaded, so extraction and quality use the same
-# fully calibrated policy in one pass.
 _classification.CLASSIFICATION_VERSION = CLASSIFICATION_VERSION
-_classification.classify_candidate = classify_candidate_v056k_final
-_quality.classify_candidate = classify_candidate_v056k_final
+_classification.classify_candidate = classify_candidate_v056l
+_quality.classify_candidate = classify_candidate_v056l
 _pipeline_v05.build_source_chase_queries = build_source_chase_queries_v056
 
 _PR_D_MARKER = (
@@ -48,6 +50,7 @@ _PR_D_MARKER = (
     f"source_chase_version={SOURCE_CHASE_VERSION}; "
     f"content_identity_version={CONTENT_IDENTITY_VERSION}; "
     f"source_chase_identity_version={SOURCE_CHASE_IDENTITY_VERSION}; "
+    f"historical_dedupe_version={HISTORICAL_DEDUPE_VERSION}; "
     f"post_extraction_gate_version={POST_EXTRACTION_GATE_VERSION}"
 )
 if _PR_D_MARKER not in _pipeline_v056b._SELECTION_MARKER:
@@ -97,8 +100,31 @@ def _apply_classification(
     )
 
 
+def _write_terminal_state(article: ExtractedArticle) -> None:
+    article.metadata["terminal_state"] = {
+        "version": POST_EXTRACTION_GATE_VERSION,
+        "final_calibration_version": FINAL_CALIBRATION_VERSION,
+        "page_role": article.page_role,
+        "page_type": article.page_type,
+        "content_type": article.content_type,
+        "candidate_disposition": article.candidate_disposition,
+        "eligible_for_editor": article.eligible_for_editor,
+        "reject_reason": article.reject_reason,
+        "classification_reason": article.classification_reason,
+        "source_relationship": article.source_relationship,
+        "source_action": article.source_action,
+        "duplicate_type": article.duplicate_type,
+        "content_cluster_id": article.content_cluster_id,
+    }
+
+
 class NativeCollectorPipeline(_BasePipeline):
-    """Run PR-A/B/C with one final v0.5.6k classification and terminal gate."""
+    """Run PR-A/B/C with one final v0.5.6l classification and terminal gate."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._historical_dedupe_count = 0
+        self._historical_dedupe = HistoricalPrimaryDocumentDedupe(self.store)
 
     async def _extract_batch(
         self,
@@ -126,11 +152,22 @@ class NativeCollectorPipeline(_BasePipeline):
             if identity.resolved_title and identity.resolved_title != article.title:
                 article.title = identity.resolved_title
 
-            result = classify_candidate_v056k_final(
+            raw_author = str(getattr(article, "author", "") or "")
+            clean_author = sanitize_author_v056l(raw_author)
+            if clean_author != raw_author.strip():
+                article.metadata["author_sanitization"] = {
+                    "version": CLASSIFICATION_VERSION,
+                    "raw_author": raw_author[:500],
+                    "clean_author": clean_author,
+                    "reason": "metadata_boilerplate",
+                }
+                article.author = clean_author
+
+            result = classify_candidate_v056l(
                 url=article.url,
                 title=article.title,
                 description=article.description,
-                author=str(getattr(article, "author", "") or ""),
+                author=article.author,
                 markdown=article.content_markdown,
                 published_at=article.published_at,
                 verification_level=article.verification_level,
@@ -158,26 +195,16 @@ class NativeCollectorPipeline(_BasePipeline):
                 "reason": article.classification_reason,
             }
 
-            # PR-C applies an extraction-stage gate before the later
-            # classification layers. Re-run it once here, with the final body
-            # date parser explicitly injected, so top-level fields expose one
-            # authoritative terminal state without global monkeypatching.
-            apply_post_extraction_gates_v056k(
+            apply_post_extraction_gates_v056l(
                 discovered_item,
                 article,
-                body_date_extractor=extract_body_publication_date_final,
+                body_date_extractor=extract_body_publication_date_v056l,
             )
-            article.metadata["terminal_state"] = {
-                "version": POST_EXTRACTION_GATE_VERSION,
-                "final_calibration_version": FINAL_CALIBRATION_VERSION,
-                "page_role": article.page_role,
-                "page_type": article.page_type,
-                "content_type": article.content_type,
-                "candidate_disposition": article.candidate_disposition,
-                "eligible_for_editor": article.eligible_for_editor,
-                "reject_reason": article.reject_reason,
-                "classification_reason": article.classification_reason,
-            }
+
+        pairs = list(zip(discovered, articles, strict=True))
+        self._historical_dedupe_count += self._historical_dedupe.apply(pairs)
+        for article in articles:
+            _write_terminal_state(article)
         return articles
 
     async def collect(
@@ -185,6 +212,8 @@ class NativeCollectorPipeline(_BasePipeline):
         group_id: str | None = None,
         query_file: Path | None = None,
     ) -> dict[str, Any]:
+        self._historical_dedupe_count = 0
+        self._historical_dedupe.reset()
         result = await super().collect(group_id=group_id, query_file=query_file)
         result.update(
             {
@@ -194,6 +223,10 @@ class NativeCollectorPipeline(_BasePipeline):
                 "source_chase_version": SOURCE_CHASE_VERSION,
                 "content_identity_version": CONTENT_IDENTITY_VERSION,
                 "source_chase_identity_version": SOURCE_CHASE_IDENTITY_VERSION,
+                "historical_dedupe_version": HISTORICAL_DEDUPE_VERSION,
+                "historical_duplicates_rejected": self._historical_dedupe_count,
+                "historical_dedupe_cache_loads": self._historical_dedupe.load_count,
+                "historical_dedupe_load_error": self._historical_dedupe.load_error,
                 "post_extraction_gate_version": POST_EXTRACTION_GATE_VERSION,
             }
         )
