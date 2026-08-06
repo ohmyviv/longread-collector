@@ -29,6 +29,7 @@ jobs:
           import asyncio
           import json
           from longread_collector.classification_v056m import classify_candidate_v056m
+          from longread_collector.content_identity_v056j import evaluate_content_identity
           from longread_collector.direct_html_v056m import read_direct_html_v056m
 
           pages = [
@@ -45,11 +46,14 @@ jobs:
                       data, meta = await read_direct_html_v056m(url, timeout=30.0)
                       markdown = str(data.get("markdown") or "")
                       title = str(data.get("title") or "")
+                      identity = evaluate_content_identity(title=title, markdown=markdown)
                       classified = classify_candidate_v056m(
                           url=url,
                           title=title,
+                          description=str(data.get("description") or ""),
+                          author=str(data.get("author") or ""),
                           markdown=markdown,
-                          published_at=published_at,
+                          published_at=str(data.get("published_at") or published_at),
                           verification_level="B",
                           content_chars=len(markdown),
                       )
@@ -57,13 +61,18 @@ jobs:
                           "label": label,
                           "url": url,
                           "title": title,
+                          "author": data.get("author", ""),
+                          "published_at": data.get("published_at", ""),
                           "body_chars": len(markdown),
+                          "body_prose_chars": identity.body_prose_chars,
+                          "title_similarity": identity.title_similarity,
                           "minimum": minimum,
                           "method": (data.get("metadata") or {}).get("direct_html_method", ""),
                           "http_status": meta.get("http_status"),
                           "candidate_disposition": classified.candidate_disposition,
                           "content_type": classified.content_type,
                           "classification_reason": classified.reason,
+                          "first_lines": markdown.splitlines()[:30],
                           "passed": (
                               len(markdown) >= minimum
                               and bool(title)
