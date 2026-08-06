@@ -63,6 +63,18 @@ _PROMOTIONAL_RE = re.compile(
     r"下载报告|填写表单|立即报名|request a demo)",
     re.I,
 )
+_INVESTIGATIVE_FOLLOWUP_TITLE_RE = re.compile(
+    r"(?=.*(?:暗访|调查(?:报道)?|曝光))(?=.*(?:后续|追踪|核查|进展|整改)).+",
+    re.I,
+)
+_INVESTIGATIVE_FOLLOWUP_BODY_MARKERS = (
+    re.compile(r"(?:报道刊发后|据此前报道|前期(?:暗访|调查|报道))", re.I),
+    re.compile(r"(?:记者|本报记者|新京报讯\s*[（(]?记者)", re.I),
+    re.compile(r"(?:医保|市场监管|公安|监管|执法|纪检|有关)部门", re.I),
+    re.compile(r"(?:专项核查|展开调查|联合.{0,30}调查|迅速响应|现场排查|协同跟进)", re.I),
+    re.compile(r"(?:负责人|工作人员).{0,40}(?:表示|回应|介绍)", re.I),
+    re.compile(r"(?:致电|联系).{0,40}(?:核实|采访|询问)", re.I),
+)
 
 
 def _count(patterns: tuple[re.Pattern[str], ...], text: str) -> int:
@@ -75,6 +87,20 @@ def _reject(reason: str, page_type: str, content_type: str) -> ClassificationRes
         page_type=page_type,
         content_type=content_type,
         candidate_disposition="reject",
+        source_relationship="original",
+        source_action="none",
+        duplicate_type="none",
+        confidence="high",
+        reason=reason,
+    )
+
+
+def _formal_original(*, reason: str, content_type: str) -> ClassificationResult:
+    return ClassificationResult(
+        page_role="standalone_content",
+        page_type="article",
+        content_type=content_type,
+        candidate_disposition="formal_candidate",
         source_relationship="original",
         source_action="none",
         duplicate_type="none",
@@ -174,6 +200,25 @@ def classify_candidate_v056m(
         _LOW_VALUE_RE.search("\n".join((resolved_title, text[:7000])))
         or _PROMOTIONAL_RE.search("\n".join((resolved_title, text[:7000])))
     )
+
+    # A focused follow-up to a previously published investigation can be
+    # editorially substantive even below the general long-form threshold. The
+    # title must identify both the investigation and its follow-up, and the body
+    # must contain a byline plus several distinct official-response actions.
+    if (
+        result.candidate_disposition == "reject"
+        and result.reason in {"short_news_brief_v056j", "insufficient_editorial_evidence"}
+        and _INVESTIGATIVE_FOLLOWUP_TITLE_RE.search(resolved_title)
+        and identity.body_prose_chars >= 700
+        and identity.title_similarity >= 0.75
+        and len(paragraphs) >= 4
+        and _count(_INVESTIGATIVE_FOLLOWUP_BODY_MARKERS, text[:12000]) >= 4
+        and not unsafe
+    ):
+        return _formal_original(
+            reason="focused_investigative_followup_v056m",
+            content_type="reported_investigative_followup",
+        )
 
     # Transparent complete republications are valid formal candidates. This
     # recovery requires both disclosure and strong article-body evidence, and
