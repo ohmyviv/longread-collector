@@ -5,6 +5,7 @@ on:
     paths:
       - 'src/longread_collector/direct_html_v056m.py'
       - 'src/longread_collector/extraction_v056m.py'
+      - 'src/longread_collector/classification_v056m.py'
       - '.github/workflows/v056m-live-page-replay.yml'
   workflow_dispatch:
 
@@ -22,27 +23,36 @@ jobs:
           python-version: '3.12'
           cache: pip
       - run: pip install .
-      - name: Recover four Day 1 BJNews pages without Firecrawl
+      - name: Recover and classify four Day 1 BJNews pages without Firecrawl
         run: |
           python - <<'PY'
           import asyncio
           import json
+          from longread_collector.classification_v056m import classify_candidate_v056m
           from longread_collector.direct_html_v056m import read_direct_html_v056m
 
           pages = [
-              ("伦理访谈", "https://www.bjnews.com.cn/detail/1785892533169279.html", 1600),
-              ("文和友商业特稿", "https://www.bjnews.com.cn/detail/1785729736168621.html", 1600),
-              ("魏青文化专访", "https://www.bjnews.com.cn/detail/1785395155129578.html", 1600),
-              ("医保暗访后续", "https://www.bjnews.com.cn/detail/1785414195169195.html", 600),
+              ("伦理访谈", "https://www.bjnews.com.cn/detail/1785892533169279.html", "2026-08-05 09:15", 1600),
+              ("文和友商业特稿", "https://www.bjnews.com.cn/detail/1785729736168621.html", "2026-08-03 12:02", 1600),
+              ("魏青文化专访", "https://www.bjnews.com.cn/detail/1785395155129578.html", "2026-07-30 15:23", 1600),
+              ("医保暗访后续", "https://www.bjnews.com.cn/detail/1785414195169195.html", "2026-07-30 20:23", 600),
           ]
 
           async def main():
               results = []
-              for label, url, minimum in pages:
+              for label, url, published_at, minimum in pages:
                   try:
                       data, meta = await read_direct_html_v056m(url, timeout=30.0)
                       markdown = str(data.get("markdown") or "")
                       title = str(data.get("title") or "")
+                      classified = classify_candidate_v056m(
+                          url=url,
+                          title=title,
+                          markdown=markdown,
+                          published_at=published_at,
+                          verification_level="B",
+                          content_chars=len(markdown),
+                      )
                       result = {
                           "label": label,
                           "url": url,
@@ -51,7 +61,14 @@ jobs:
                           "minimum": minimum,
                           "method": (data.get("metadata") or {}).get("direct_html_method", ""),
                           "http_status": meta.get("http_status"),
-                          "passed": len(markdown) >= minimum and bool(title),
+                          "candidate_disposition": classified.candidate_disposition,
+                          "content_type": classified.content_type,
+                          "classification_reason": classified.reason,
+                          "passed": (
+                              len(markdown) >= minimum
+                              and bool(title)
+                              and classified.candidate_disposition == "formal_candidate"
+                          ),
                       }
                   except Exception as exc:
                       result = {
