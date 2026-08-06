@@ -19,7 +19,7 @@ from .content_identity_v056j import CONTENT_IDENTITY_VERSION, evaluate_content_i
 from .extraction import FallbackBudget
 from .historical_dedupe_v056l import (
     HISTORICAL_DEDUPE_VERSION,
-    apply_historical_primary_document_dedupe_from_store,
+    HistoricalPrimaryDocumentDedupe,
 )
 from .models import DiscoveredURL, ExtractedArticle
 from .pipeline_v056c import NativeCollectorPipeline as _BasePipeline
@@ -38,9 +38,6 @@ from .source_relationship_v056 import (
 
 FINAL_CALIBRATION_VERSION = "shadow-quality-final-v0.5.6l"
 
-# v0.5.5 installs its classifier during module import. PR-D replaces the
-# callable after PR-C is fully loaded, so extraction and quality use the same
-# fully calibrated policy in one pass.
 _classification.CLASSIFICATION_VERSION = CLASSIFICATION_VERSION
 _classification.classify_candidate = classify_candidate_v056l
 _quality.classify_candidate = classify_candidate_v056l
@@ -115,6 +112,7 @@ def _write_terminal_state(article: ExtractedArticle) -> None:
         "reject_reason": article.reject_reason,
         "classification_reason": article.classification_reason,
         "source_relationship": article.source_relationship,
+        "source_action": article.source_action,
         "duplicate_type": article.duplicate_type,
         "content_cluster_id": article.content_cluster_id,
     }
@@ -126,6 +124,7 @@ class NativeCollectorPipeline(_BasePipeline):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._historical_dedupe_count = 0
+        self._historical_dedupe = HistoricalPrimaryDocumentDedupe(self.store)
 
     async def _extract_batch(
         self,
@@ -203,10 +202,7 @@ class NativeCollectorPipeline(_BasePipeline):
             )
 
         pairs = list(zip(discovered, articles, strict=True))
-        self._historical_dedupe_count += apply_historical_primary_document_dedupe_from_store(
-            self.store,
-            pairs,
-        )
+        self._historical_dedupe_count += self._historical_dedupe.apply(pairs)
         for article in articles:
             _write_terminal_state(article)
         return articles
@@ -217,6 +213,7 @@ class NativeCollectorPipeline(_BasePipeline):
         query_file: Path | None = None,
     ) -> dict[str, Any]:
         self._historical_dedupe_count = 0
+        self._historical_dedupe.reset()
         result = await super().collect(group_id=group_id, query_file=query_file)
         result.update(
             {
@@ -228,6 +225,8 @@ class NativeCollectorPipeline(_BasePipeline):
                 "source_chase_identity_version": SOURCE_CHASE_IDENTITY_VERSION,
                 "historical_dedupe_version": HISTORICAL_DEDUPE_VERSION,
                 "historical_duplicates_rejected": self._historical_dedupe_count,
+                "historical_dedupe_cache_loads": self._historical_dedupe.load_count,
+                "historical_dedupe_load_error": self._historical_dedupe.load_error,
                 "post_extraction_gate_version": POST_EXTRACTION_GATE_VERSION,
             }
         )
