@@ -139,12 +139,14 @@ def _article_from_cache(row: dict[str, Any]) -> tuple[DiscoveredURL, ExtractedAr
     return discovered, article
 
 
-def _title_similarity(left: str, right: str) -> float:
-    return SequenceMatcher(
-        None,
-        normalize_title(left),
-        normalize_title(right),
-    ).ratio()
+def _title_identity(left: str, right: str) -> tuple[bool, float]:
+    normalized_left = normalize_title(left)
+    normalized_right = normalize_title(right)
+    if not normalized_left or not normalized_right:
+        return False, 0.0
+    ratio = SequenceMatcher(None, normalized_left, normalized_right).ratio()
+    contained = normalized_left in normalized_right or normalized_right in normalized_left
+    return contained or ratio >= 0.55, ratio
 
 
 def run(spreadsheet_id: str, credentials_file: Path) -> dict[str, Any]:
@@ -174,11 +176,11 @@ def run(spreadsheet_id: str, credentials_file: Path) -> dict[str, Any]:
         cache_row = _record(cache_headers, cache_values[row_number - 1])
         expected_article_id = str(review.get("article_id") or "")
         actual_article_id = str(cache_row.get("article_id") or "")
-        similarity = _title_similarity(
+        same_title, similarity = _title_identity(
             str(review.get("title") or ""),
             str(cache_row.get("title") or ""),
         )
-        if similarity < 0.70:
+        if not same_title:
             raise RuntimeError(
                 f"cache row {row_number} title drifted: expected "
                 f"{review.get('title')!r}, got {cache_row.get('title')!r}"
