@@ -68,7 +68,7 @@ def _article_row(article: ExtractedArticle) -> dict[str, Any]:
         "original_publisher": article.original_publisher,
         "original_url": article.original_url,
         "canonical_source": article.canonical_source,
-        "first_seen_at_bj": article.first_seen_at_bj,
+        "first_seen_at_bj": str(article.metadata.get("first_seen_at_bj", "")),
     }
 
 
