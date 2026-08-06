@@ -187,6 +187,7 @@ def classify_candidate_v056m(
                 result.candidate_disposition == "reject"
                 and result.reason.startswith("insufficient_editorial_evidence")
             )
+            or result.candidate_disposition == "original_source_required"
             or (
                 result.candidate_disposition == "formal_candidate"
                 and result.source_relationship == "original"
