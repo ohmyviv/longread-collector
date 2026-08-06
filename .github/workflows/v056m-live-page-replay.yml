@@ -1,0 +1,72 @@
+name: v0.5.6m live page replay
+
+on:
+  pull_request:
+    paths:
+      - 'src/longread_collector/direct_html_v056m.py'
+      - 'src/longread_collector/extraction_v056m.py'
+      - '.github/workflows/v056m-live-page-replay.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  replay-live-pages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install .
+      - name: Recover four Day 1 BJNews pages without Firecrawl
+        run: |
+          python - <<'PY'
+          import asyncio
+          import json
+          from longread_collector.direct_html_v056m import read_direct_html_v056m
+
+          pages = [
+              ("伦理访谈", "https://www.bjnews.com.cn/detail/1785892533169279.html", 1600),
+              ("文和友商业特稿", "https://www.bjnews.com.cn/detail/1785729736168621.html", 1600),
+              ("魏青文化专访", "https://www.bjnews.com.cn/detail/1785395155129578.html", 1600),
+              ("医保暗访后续", "https://www.bjnews.com.cn/detail/1785414195169195.html", 600),
+          ]
+
+          async def main():
+              results = []
+              for label, url, minimum in pages:
+                  try:
+                      data, meta = await read_direct_html_v056m(url, timeout=30.0)
+                      markdown = str(data.get("markdown") or "")
+                      title = str(data.get("title") or "")
+                      result = {
+                          "label": label,
+                          "url": url,
+                          "title": title,
+                          "body_chars": len(markdown),
+                          "minimum": minimum,
+                          "method": (data.get("metadata") or {}).get("direct_html_method", ""),
+                          "http_status": meta.get("http_status"),
+                          "passed": len(markdown) >= minimum and bool(title),
+                      }
+                  except Exception as exc:
+                      result = {
+                          "label": label,
+                          "url": url,
+                          "minimum": minimum,
+                          "passed": False,
+                          "error": f"{type(exc).__name__}: {exc}",
+                      }
+                  results.append(result)
+              print(json.dumps(results, ensure_ascii=False, indent=2))
+              failures = [item for item in results if not item["passed"]]
+              strong = sum(item.get("body_chars", 0) >= 1600 for item in results)
+              if failures or strong < 3:
+                  raise SystemExit(1)
+
+          asyncio.run(main())
+          PY
