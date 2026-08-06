@@ -40,6 +40,21 @@ _SCRIPT_JSON_RE = re.compile(
 )
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"[ \t\r\f\v]+")
+_STOP_HEADING_RE = re.compile(
+    r"^(?:我要评论|热点|最新|热议|相关推荐|相关阅读|推荐阅读|更多推荐|直播)$",
+    re.I,
+)
+_META_TITLE_KEYS = {"og:title", "twitter:title", "headline"}
+_META_DATE_KEYS = {
+    "article:published_time",
+    "datepublished",
+    "pubdate",
+    "publishdate",
+    "publish_time",
+    "date",
+}
+_META_AUTHOR_KEYS = {"author", "article:author", "byline"}
+_META_DESCRIPTION_KEYS = {"description", "og:description", "twitter:description"}
 
 
 def _clean_text(value: Any) -> str:
@@ -97,10 +112,26 @@ class _ArticleTextParser(HTMLParser):
         self.capture_tag = ""
         self.buffer: list[str] = []
         self.main_lines: list[str] = []
+        self.article_lines: list[str] = []
         self.fallback_lines: list[str] = []
+        self.article_started = False
+        self.article_finished = False
+        self.meta: dict[str, str] = {}
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag = tag.lower()
+        if tag == "meta":
+            mapping = {str(key or "").lower(): str(value or "") for key, value in attrs}
+            key = (
+                mapping.get("property")
+                or mapping.get("name")
+                or mapping.get("itemprop")
+                or ""
+            ).lower()
+            content = mapping.get("content", "").strip()
+            if key and content and key not in self.meta:
+                self.meta[key] = content
+            return
         if tag in self._SKIP:
             self.skip_depth += 1
             return
@@ -135,13 +166,24 @@ class _ArticleTextParser(HTMLParser):
                 self.fallback_lines.append(line)
                 if self.main_depth:
                     self.main_lines.append(line)
+
+                if tag == "h1" and not self.article_started:
+                    self.article_started = True
+                elif (
+                    self.article_started
+                    and tag in {"h2", "h3"}
+                    and _STOP_HEADING_RE.fullmatch(text)
+                ):
+                    self.article_finished = True
+
+                if self.article_started and not self.article_finished:
+                    self.article_lines.append(line)
             self.capture_tag = ""
             self.buffer = []
         if tag in {"article", "main"} and self.main_depth:
             self.main_depth -= 1
 
-    def markdown(self) -> str:
-        lines = self.main_lines if len("\n\n".join(self.main_lines)) >= 600 else self.fallback_lines
+    def _dedupe(self, lines: list[str]) -> str:
         output: list[str] = []
         previous = ""
         for line in lines:
@@ -150,6 +192,23 @@ class _ArticleTextParser(HTMLParser):
             output.append(line)
             previous = line
         return "\n\n".join(output)
+
+    def markdown(self) -> str:
+        main = self._dedupe(self.main_lines)
+        article = self._dedupe(self.article_lines)
+        fallback = self._dedupe(self.fallback_lines)
+        if len(main) >= 600:
+            return main
+        if len(article) >= 600:
+            return article
+        return fallback
+
+    def meta_value(self, keys: set[str]) -> str:
+        for key in keys:
+            value = self.meta.get(key, "").strip()
+            if value:
+                return value
+        return ""
 
 
 def parse_direct_html_v056m(html_text: str, *, url: str = "") -> dict[str, Any]:
@@ -211,17 +270,21 @@ def parse_direct_html_v056m(html_text: str, *, url: str = "") -> dict[str, Any]:
         pass
     markdown = parser.markdown()
     title_match = re.search(r"(?is)<h1\b[^>]*>(.*?)</h1>", raw)
-    title = _clean_text(title_match.group(1)) if title_match else ""
+    title = parser.meta_value(_META_TITLE_KEYS)
+    if not title and title_match:
+        title = _clean_text(title_match.group(1))
     return {
         "markdown": markdown,
-        "title": title,
-        "published_at": "",
-        "author": "",
-        "description": "",
+        "title": _clean_text(title),
+        "published_at": parser.meta_value(_META_DATE_KEYS),
+        "author": _clean_text(parser.meta_value(_META_AUTHOR_KEYS)),
+        "description": _clean_text(parser.meta_value(_META_DESCRIPTION_KEYS)),
         "metadata": {
             "direct_html_version": DIRECT_HTML_VERSION,
             "direct_html_method": "semantic_html",
             "json_parse_errors": parse_errors,
+            "article_boundary_used": bool(parser.article_lines),
+            "meta_fields": sorted(parser.meta),
             "url": url,
         },
     }
