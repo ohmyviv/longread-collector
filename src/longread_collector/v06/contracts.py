@@ -38,6 +38,17 @@ class StageName(StrEnum):
     PROJECTION = "projection"
 
 
+class StageEventType(StrEnum):
+    DISCOVERY_RESULT = "discovery_result"
+    GATE_RESULT = "gate_result"
+    EXTRACTOR_ATTEMPT = "extractor_attempt"
+    ACQUISITION_RESULT = "acquisition_result"
+    CANONICAL_RESULT = "canonical_result"
+    EDITORIAL_RESULT = "editorial_result"
+    SELECTION_RESULT = "selection_result"
+    PROJECTION_RESULT = "projection_result"
+
+
 class TechnicalStatus(StrEnum):
     SUCCESS = "success"
     PARTIAL = "partial"
@@ -363,6 +374,7 @@ class StageEvent:
     run_id: str
     item_id: str
     stage: StageName
+    event_type: StageEventType
     stage_version: str
     technical_status: TechnicalStatus
     flow_status: FlowStatus
@@ -370,7 +382,11 @@ class StageEvent:
     created_at_bj: str
     parent_event_id: str = ""
     cost: float = 0.0
+    attributes: Mapping[str, Any] = field(default_factory=dict)
     evidence: tuple[Evidence, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "attributes", _freeze_mapping(self.attributes))
 
 
 @dataclass(frozen=True, slots=True)
@@ -411,6 +427,7 @@ __all__ = [
     "SourceAction",
     "SourceRelationship",
     "StageEvent",
+    "StageEventType",
     "StageName",
     "TechnicalStatus",
 ]
