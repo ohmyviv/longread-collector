@@ -21,6 +21,7 @@ _OFFICIAL_HOST_SUFFIX_RE = re.compile(
     r"(?:中华人民共和国)?(?:驻[^\s]{1,40}(?:大使馆|总领事馆)|"
     r"[^\s]{1,30}(?:人民政府网|政府网|政府网站))$",
 )
+_CARRIER_DOMAIN_RE = re.compile(r"(?:embassy|consulate|china-embassy|fmprc)", re.I)
 
 
 def _domain(url: str) -> str:
@@ -41,20 +42,23 @@ def _is_primary_document(article: ExtractedArticle) -> bool:
     )
 
 
-def _historical_score(row: dict[str, Any]) -> tuple[int, int, str]:
-    relationship = str(row.get("source_relationship", ""))
-    domain = _domain(str(row.get("url_canonical") or row.get("url") or ""))
-    central = int(not re.search(r"(?:embassy|consulate|china-embassy|fmprc)", domain))
+def _preference(domain: str, relationship: str) -> tuple[int, int]:
+    central = int(not _CARRIER_DOMAIN_RE.search(domain))
     original = int(relationship == "original")
-    first_seen = str(row.get("first_seen_at_bj", ""))
-    return central, original, first_seen
+    return central, original
+
+
+def _historical_preference(row: dict[str, Any]) -> tuple[int, int]:
+    domain = _domain(str(row.get("url_canonical") or row.get("url") or ""))
+    relationship = str(row.get("source_relationship", ""))
+    return _preference(domain, relationship)
 
 
 def apply_historical_primary_document_dedupe(
     pairs: Iterable[tuple[DiscoveredURL, ExtractedArticle]],
     historical_rows: Iterable[dict[str, Any]],
 ) -> int:
-    """Reject later cross-host copies of an already cached primary document."""
+    """Reject a later carrier copy, but never prefer it over a central original."""
 
     pair_list = list(pairs)
     index: dict[str, list[dict[str, Any]]] = {}
@@ -89,9 +93,29 @@ def apply_historical_primary_document_dedupe(
         ]
         if not matches:
             continue
-        original = sorted(matches, key=_historical_score, reverse=True)[0]
-        original_url = str(original.get("original_url") or original.get("url_canonical") or original.get("url") or "")
-        original_source = str(original.get("original_publisher") or original.get("canonical_source") or "")
+
+        best_preference = max(_historical_preference(row) for row in matches)
+        current_preference = _preference(current_domain, article.source_relationship)
+        if current_preference > best_preference:
+            # The current page is a stronger original than every historical
+            # carrier. Keep it and let future carriers point back to it.
+            continue
+        preferred = [row for row in matches if _historical_preference(row) == best_preference]
+        original = sorted(
+            preferred,
+            key=lambda row: str(row.get("first_seen_at_bj", "")) or "9999",
+        )[0]
+        original_url = str(
+            original.get("original_url")
+            or original.get("url_canonical")
+            or original.get("url")
+            or ""
+        )
+        original_source = str(
+            original.get("original_publisher")
+            or original.get("canonical_source")
+            or ""
+        )
         cluster_id = "historical-doc-" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
 
         article.candidate_disposition = "reject"
@@ -113,6 +137,8 @@ def apply_historical_primary_document_dedupe(
                 "matched_url": original_url,
                 "document_key": key,
                 "cluster_id": cluster_id,
+                "current_preference": list(current_preference),
+                "historical_preference": list(best_preference),
             }
         )
         changed += 1
@@ -123,11 +149,12 @@ def apply_historical_primary_document_dedupe_from_store(
     store: Any,
     pairs: Iterable[tuple[DiscoveredURL, ExtractedArticle]],
 ) -> int:
+    pair_list = list(pairs)
     try:
         worksheet = store.book.worksheet("article_cache")
         rows = worksheet.get_all_records()
     except Exception as exc:  # provider failures must not corrupt a run
-        for _, article in pairs:
+        for _, article in pair_list:
             article.metadata.setdefault("historical_dedupe", {}).update(
                 {
                     "version": HISTORICAL_DEDUPE_VERSION,
@@ -136,7 +163,7 @@ def apply_historical_primary_document_dedupe_from_store(
                 }
             )
         return 0
-    return apply_historical_primary_document_dedupe(pairs, rows)
+    return apply_historical_primary_document_dedupe(pair_list, rows)
 
 
 __all__ = [
