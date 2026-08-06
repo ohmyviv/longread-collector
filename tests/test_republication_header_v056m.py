@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from longread_collector.classification_v056m import classify_candidate_v056m
+from longread_collector.content_identity_v056j import evaluate_content_identity
 
 
 def _analysis_body(count: int = 28) -> str:
@@ -17,13 +18,15 @@ def test_dated_external_publisher_link_marks_complete_republication() -> None:
         f"# {title}\n\n"
         "2026年08月06日 06:04[经济日报](http://ipaper.ce.cn/pc/content/202608/06/content_336861.html)\n\n"
         "## 释放数据价值\n\n"
-        + _analysis_body(12)
+        + _analysis_body(24)
         + "\n\n## 夯实算力底座\n\n"
-        + _analysis_body(10)
+        + _analysis_body(20)
         + "\n\n## 提升算法优势\n\n"
-        + _analysis_body(8)
+        + _analysis_body(16)
         + "\n\n新浪财经声明：此消息系转载自合作媒体，文章内容仅供参考。"
     )
+    identity = evaluate_content_identity(title=title, markdown=markdown)
+    assert identity.body_prose_chars >= 3400
     result = classify_candidate_v056m(
         url="https://finance.example.com/article/ai-foundation",
         title=title,
@@ -44,7 +47,7 @@ def test_same_host_dated_link_does_not_create_false_republication() -> None:
     markdown = (
         f"# {title}\n\n"
         "2026年08月06日 06:04[本站](https://news.example.com/about)\n\n"
-        + _analysis_body(30)
+        + _analysis_body(60)
     )
     result = classify_candidate_v056m(
         url="https://news.example.com/article/original",
