@@ -51,12 +51,17 @@ _GATED_REPORT_MARKERS = (
     re.compile(r"(?:download now|download the .{0,30}report|complimentary .{0,20}report|look inside)", re.I),
     re.compile(r"(?:first register|register your details|login to access|hub registration)", re.I),
     re.compile(r"(?:first name|last name|business email|company/?organization|job title)", re.I),
+    re.compile(r"(?:complete the form|submit the form|fill out the form|填写表单)", re.I),
     re.compile(r"(?:sponsored by|presented by|partnered with|sponsor)", re.I),
     re.compile(r"(?:consent to receive marketing|marketing messaging)", re.I),
 )
 _SPONSORED_CASE_RE = re.compile(
     r"(?:sponsored article|this article is brought to you by|partner content|"
     r"paid content|advertorial|品牌内容|赞助内容)",
+    re.I,
+)
+_VENDOR_CASE_CONTEXT_RE = re.compile(
+    r"(?:customer story|user story|case study|this article originally appeared|客户案例|用户案例)",
     re.I,
 )
 _VENDOR_PRODUCT_RE = re.compile(
@@ -183,7 +188,10 @@ def classify_candidate_v056l(
             source_relationship="secondary_republish",
         )
 
-    if _SPONSORED_CASE_RE.search(text[:18000]) and _VENDOR_PRODUCT_RE.search(text[:24000]):
+    if (
+        (_SPONSORED_CASE_RE.search(text[:18000]) or _VENDOR_CASE_CONTEXT_RE.search(text[:18000]))
+        and _VENDOR_PRODUCT_RE.search(text[:24000])
+    ):
         return _reject(
             "sponsored_vendor_case_v056l",
             "advertorial",
