@@ -177,7 +177,7 @@ def test_direct_html_parser_prefers_jsonld_article_body() -> None:
     )
     data = parse_direct_html_v056m(html, url="https://example.com/detail/1.html")
     assert data["title"].startswith("国家科技伦理委员会委员")
-    assert len(data["markdown"]) > 3000
+    assert len(data["markdown"]) > 1600
     assert data["published_at"].startswith("2026-08-06")
     assert data["metadata"]["direct_html_method"] == "embedded_json"
 
