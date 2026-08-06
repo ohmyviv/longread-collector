@@ -40,6 +40,7 @@ _SCRIPT_JSON_RE = re.compile(
 )
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"[ \t\r\f\v]+")
+_H1_RE = re.compile(r"(?m)^\s*#\s+\S")
 _STOP_HEADING_RE = re.compile(
     r"^(?:我要评论|热点|最新|热议|相关推荐|相关阅读|推荐阅读|更多推荐|直播)$",
     re.I,
@@ -64,6 +65,14 @@ def _clean_text(value: Any) -> str:
     text = _TAG_RE.sub(" ", text)
     lines = [_WS_RE.sub(" ", line).strip() for line in text.splitlines()]
     return "\n\n".join(line for line in lines if line)
+
+
+def _with_title_heading(markdown: str, title: str) -> str:
+    body = str(markdown or "").strip()
+    clean_title = _clean_text(title).strip()
+    if clean_title and body and not _H1_RE.search(body):
+        return f"# {clean_title}\n\n{body}"
+    return body
 
 
 def _walk_json(value: Any) -> Iterable[dict[str, Any]]:
@@ -246,7 +255,7 @@ def parse_direct_html_v056m(html_text: str, *, url: str = "") -> dict[str, Any]:
                 continue
             best_score = score
             best = {
-                "markdown": body,
+                "markdown": _with_title_heading(body, title),
                 "title": title,
                 "published_at": str(_first_value(node, _DATE_KEYS) or "").strip(),
                 "author": _author_text(_first_value(node, _AUTHOR_KEYS)),
@@ -273,9 +282,11 @@ def parse_direct_html_v056m(html_text: str, *, url: str = "") -> dict[str, Any]:
     title = parser.meta_value(_META_TITLE_KEYS)
     if not title and title_match:
         title = _clean_text(title_match.group(1))
+    clean_title = _clean_text(title)
+    markdown = _with_title_heading(markdown, clean_title)
     return {
         "markdown": markdown,
-        "title": _clean_text(title),
+        "title": clean_title,
         "published_at": parser.meta_value(_META_DATE_KEYS),
         "author": _clean_text(parser.meta_value(_META_AUTHOR_KEYS)),
         "description": _clean_text(parser.meta_value(_META_DESCRIPTION_KEYS)),
@@ -284,6 +295,7 @@ def parse_direct_html_v056m(html_text: str, *, url: str = "") -> dict[str, Any]:
             "direct_html_method": "semantic_html",
             "json_parse_errors": parse_errors,
             "article_boundary_used": bool(parser.article_lines),
+            "title_heading_injected": bool(clean_title and _H1_RE.search(markdown)),
             "meta_fields": sorted(parser.meta),
             "url": url,
         },
