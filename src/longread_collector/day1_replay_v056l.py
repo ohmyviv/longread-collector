@@ -29,7 +29,6 @@ from .historical_dedupe_v056l import apply_historical_primary_document_dedupe
 from .models import DiscoveredURL, ExtractedArticle
 from .post_extraction_gates_v056l import apply_post_extraction_gates_v056l
 from .publication_date_v056l import extract_body_publication_date_v056l
-from .sheets import ARTICLE_HEADERS
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets.readonly",
@@ -152,15 +151,23 @@ def run(spreadsheet_id: str, credentials_file: Path) -> dict[str, Any]:
     if len(reviews) != 32:
         raise RuntimeError(f"expected 32 review rows, got {len(reviews)}")
 
-    cache_ws = book.worksheet("article_cache")
-    cache_values = cache_ws.get_all_values()
+    cache_values = book.worksheet("article_cache").get_all_values()
     cache_headers = cache_values[0]
     historical_rows = [_record(cache_headers, row) for row in cache_values[1:]]
 
     evaluated: list[tuple[dict[str, Any], ExtractedArticle]] = []
     for review in reviews:
         row_number = int(str(review["cache_row"]))
-        cache_row = _record(cache_headers, cache_ws.row_values(row_number))
+        if row_number < 2 or row_number > len(cache_values):
+            raise RuntimeError(f"cache row out of bounds: {row_number}")
+        cache_row = _record(cache_headers, cache_values[row_number - 1])
+        expected_article_id = str(review.get("article_id") or "")
+        actual_article_id = str(cache_row.get("article_id") or "")
+        if expected_article_id != actual_article_id:
+            raise RuntimeError(
+                f"cache row {row_number} drifted: expected {expected_article_id}, "
+                f"got {actual_article_id}"
+            )
         discovered, article = _article_from_cache(cache_row)
         apply_historical_primary_document_dedupe(
             [(discovered, article)], historical_rows
