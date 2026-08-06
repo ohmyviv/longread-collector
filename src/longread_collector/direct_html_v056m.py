@@ -45,6 +45,10 @@ _STOP_HEADING_RE = re.compile(
     r"^(?:我要评论|热点|最新|热议|相关推荐|相关阅读|推荐阅读|更多推荐|直播)$",
     re.I,
 )
+_TRAILING_SECTION_RE = re.compile(
+    r"(?m)^\s*#{1,3}\s*(?:我要评论|热点|最新|热议|相关推荐|相关阅读|推荐阅读|更多推荐|直播)\s*$",
+    re.I,
+)
 _META_TITLE_KEYS = {"og:title", "twitter:title", "headline"}
 _META_DATE_KEYS = {
     "article:published_time",
@@ -67,8 +71,16 @@ def _clean_text(value: Any) -> str:
     return "\n\n".join(line for line in lines if line)
 
 
-def _with_title_heading(markdown: str, title: str) -> str:
+def _trim_trailing_sections(markdown: str) -> str:
     body = str(markdown or "").strip()
+    match = _TRAILING_SECTION_RE.search(body)
+    if match:
+        body = body[: match.start()].rstrip()
+    return body
+
+
+def _with_title_heading(markdown: str, title: str) -> str:
+    body = _trim_trailing_sections(markdown)
     clean_title = _clean_text(title).strip()
     if clean_title and body and not _H1_RE.search(body):
         return f"# {clean_title}\n\n{body}"
@@ -296,6 +308,7 @@ def parse_direct_html_v056m(html_text: str, *, url: str = "") -> dict[str, Any]:
             "json_parse_errors": parse_errors,
             "article_boundary_used": bool(parser.article_lines),
             "title_heading_injected": bool(clean_title and _H1_RE.search(markdown)),
+            "trailing_sections_trimmed": bool(_TRAILING_SECTION_RE.search(parser.markdown())),
             "meta_fields": sorted(parser.meta),
             "url": url,
         },
