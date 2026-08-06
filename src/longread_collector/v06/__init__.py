@@ -1,7 +1,8 @@
 """Longread Collector v0.6 architecture contracts.
 
-PR-0 is intentionally inert: importing this package must not alter the active
-legacy collector pipeline or runtime configuration.
+Importing this package does not alter the active legacy collector pipeline or
+runtime configuration. Legacy compatibility adapters require an explicit
+``longread_collector.v06.legacy`` import.
 """
 
 from .contracts import (
@@ -16,6 +17,7 @@ from .contracts import (
     RunContext,
     SelectionDecision,
     StageEvent,
+    StageEventType,
 )
 from .feature_flags import (
     DEFAULT_V06_FEATURE_FLAGS,
@@ -40,6 +42,7 @@ __all__ = [
     "RunContext",
     "SelectionDecision",
     "StageEvent",
+    "StageEventType",
     "V06FeatureFlags",
     "V06Manifest",
     "V06WriteMode",
