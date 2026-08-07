@@ -35,7 +35,7 @@ _AUTH_PATH_RE = re.compile(
     re.I,
 )
 _SEARCH_INDEX_RE = re.compile(r"/(?:search)(?:/|$)", re.I)
-_CATEGORY_INDEX_RE = re.compile(r"/(?:tags?|categories?|topics?)(?:/|$)", re.I)
+_CATEGORY_ROOTS = frozenset({"tag", "tags", "category", "categories", "topic", "topics"})
 _JOB_PATH_RE = re.compile(r"/(?:jobs?|careers?|vacancies)(?:/|$)", re.I)
 _MAGAZINE_PATH_RE = re.compile(r"/magazine/\d+(?:\.s?html?)?$", re.I)
 _MAGAZINE_TITLE_RE = re.compile(
@@ -151,6 +151,16 @@ def _invalid_url(record: DiscoveryRecord) -> bool:
     return parts.scheme.lower() not in {"http", "https"} or not parts.netloc
 
 
+def _explicit_category_index(path: str) -> bool:
+    """Reject only shallow, explicit taxonomy routes, never deep content below them."""
+    segments = [segment for segment in (path or "/").split("/") if segment]
+    if not segments or segments[0].lower() not in _CATEGORY_ROOTS:
+        return False
+    if len(segments) > 2:
+        return False
+    return not bool(_ARTICLE_PATH_RE.search(path))
+
+
 def _generic_ambiguous_root(record: DiscoveryRecord) -> bool:
     path = urlsplit(record.url).path or "/"
     title = str(record.title_hint or "").strip()
@@ -244,7 +254,7 @@ class AcquisitionGateService:
             action, reason, confidence = GateAction.HARD_REJECT, "authentication_or_captcha_route", 0.99
         elif _SEARCH_INDEX_RE.search(path):
             action, reason, confidence = GateAction.HARD_REJECT, "search_index_route", 0.99
-        elif _CATEGORY_INDEX_RE.search(path):
+        elif _explicit_category_index(path):
             action, reason, confidence = GateAction.HARD_REJECT, "category_tag_topic_index_route", 0.98
         elif _JOB_PATH_RE.search(path):
             action, reason, confidence = GateAction.HARD_REJECT, "job_or_career_route", 0.99
@@ -253,14 +263,18 @@ class AcquisitionGateService:
         elif _generic_ambiguous_root(record):
             action, reason, confidence = GateAction.DEFER, "ambiguous_non_article_route", 0.80
         else:
-            high_conf = [entry for entry in dates if entry[1] >= 0.92]
-            if len(high_conf) >= 2:
-                dates_only = sorted(entry[0].date() for entry in high_conf)
+            # Any materially conflicting credible dates block a destructive stale
+            # conclusion. A later acquisition/canonical stage must resolve them.
+            credible_dates = [entry for entry in dates if entry[1] >= 0.60]
+            if len(credible_dates) >= 2:
+                dates_only = sorted(entry[0].date() for entry in credible_dates)
                 if (dates_only[-1] - dates_only[0]).days > 2:
                     action = GateAction.DEFER
                     reason = "publication_date_conflict"
-                    confidence = 0.90
+                    confidence = max(entry[1] for entry in credible_dates)
                     evidence_value = tuple(value.isoformat() for value in dates_only)
+
+            high_conf = [entry for entry in dates if entry[1] >= 0.92]
             if action is GateAction.ACQUIRE and high_conf:
                 best = max(high_conf, key=lambda entry: (entry[1], entry[0]))
                 now = _normalise_now(context.now_bj)
