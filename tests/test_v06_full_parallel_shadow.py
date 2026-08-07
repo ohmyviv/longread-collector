@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -142,8 +143,7 @@ def test_full_parallel_shadow_reuses_snapshot_and_bodies_without_requests() -> N
     assert len(payload["event_digest_sha256"]) == 64
 
 
-@pytest.mark.asyncio
-async def test_shadow_failure_is_fail_open_and_preserves_legacy_result(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_shadow_failure_is_fail_open_and_preserves_legacy_result(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_control_collect(self, group_id=None, query_file=None):
         return {
             "collector_run_id": "COL-CONTROL",
@@ -166,7 +166,7 @@ async def test_shadow_failure_is_fail_open_and_preserves_legacy_result(monkeypat
     pipeline._v06_acquired_pairs = []
     pipeline._v06_runner = SimpleNamespace(run=explode)
 
-    result = await pipeline.collect(group_id="zh_evening")
+    result = asyncio.run(pipeline.collect(group_id="zh_evening"))
 
     assert result["final_status"] == "success"
     assert result["written_cache"] == 7
