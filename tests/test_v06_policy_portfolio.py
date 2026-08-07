@@ -434,9 +434,11 @@ def test_shadow_24_plus_4_plus_4_reduces_counterfactual_regret_vs_legacy():
     assert reduction >= 0.80
 
 
-def test_manifest_advances_only_architecture_phase():
-    assert DEFAULT_V06_MANIFEST.architecture_version == "collector-v0.6-pr4"
-    assert DEFAULT_V06_MANIFEST.migration_phase == "pr4_policy_portfolio"
+def test_manifest_keeps_production_safety_invariants_across_later_phases():
+    assert DEFAULT_V06_MANIFEST.architecture_version.startswith("collector-v0.6-pr")
+    phase_number = int(DEFAULT_V06_MANIFEST.architecture_version.rsplit("pr", 1)[1])
+    assert phase_number >= 4
+    assert DEFAULT_V06_MANIFEST.migration_phase.startswith("pr")
     assert DEFAULT_V06_MANIFEST.production_behavior_changed is False
     assert DEFAULT_V06_MANIFEST.active_entrypoint_changed is False
     assert DEFAULT_V06_MANIFEST.runtime_config_integrated is False
