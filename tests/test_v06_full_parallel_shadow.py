@@ -9,7 +9,6 @@ import pytest
 
 from longread_collector.models import DiscoveredURL, ExtractedArticle
 from longread_collector.v06.contracts import RunContext
-from longread_collector.v06.shadow.pipeline import ParallelShadowCollectorPipeline
 from longread_collector.v06.shadow.runner import FullParallelShadowRunner
 
 
@@ -144,6 +143,9 @@ def test_full_parallel_shadow_reuses_snapshot_and_bodies_without_requests() -> N
 
 
 def test_shadow_failure_is_fail_open_and_preserves_legacy_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    from longread_collector.v06.shadow.pipeline import ParallelShadowCollectorPipeline
+    from longread_collector import pipeline_v056f
+
     async def fake_control_collect(self, group_id=None, query_file=None):
         return {
             "collector_run_id": "COL-CONTROL",
@@ -155,8 +157,6 @@ def test_shadow_failure_is_fail_open_and_preserves_legacy_result(monkeypatch: py
 
     def explode(*args, **kwargs):
         raise RuntimeError("shadow-only failure")
-
-    from longread_collector import pipeline_v056f
 
     monkeypatch.setattr(pipeline_v056f.NativeCollectorPipeline, "collect", fake_control_collect)
 
