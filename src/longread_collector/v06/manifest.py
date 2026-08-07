@@ -21,9 +21,9 @@ class V06Manifest:
 
 
 DEFAULT_V06_MANIFEST = V06Manifest(
-    architecture_version="collector-v0.6-pr4",
+    architecture_version="collector-v0.6-pr5",
     schema_version="v06-contracts-v1",
-    migration_phase="pr4_policy_portfolio",
+    migration_phase="pr5_acquisition_service",
     legacy_control_version="collector-v0.5.6m",
     production_behavior_changed=False,
     active_entrypoint_changed=False,
