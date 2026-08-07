@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -12,9 +13,10 @@ from .clients import FirecrawlClient, JinaReaderClient
 from .config import get_settings
 from .extraction import extract_article
 from .models import DiscoveredURL
-from .pipeline_v054 import NativeCollectorPipeline as CollectorPipeline
+from .pipeline_v054 import NativeCollectorPipeline as LegacyCollectorPipeline
 from .release_evaluation import evaluate_release_ground_truth
 from .sheets import GoogleSheetStore
+from .v06.feature_flags import PipelineEngine, V06FeatureFlags
 
 app = typer.Typer(no_args_is_help=True)
 V04_REQUIRED_SHEETS = {
@@ -25,13 +27,39 @@ V04_REQUIRED_SHEETS = {
 }
 
 
+def _v06_runtime_flags() -> V06FeatureFlags:
+    return V06FeatureFlags.from_mapping(
+        {
+            "pipeline_engine": os.getenv("PIPELINE_ENGINE"),
+            "v06_write_mode": os.getenv("V06_WRITE_MODE"),
+            "v06_shadow_enabled": os.getenv("V06_SHADOW_ENABLED"),
+            "v06_primary_enabled": os.getenv("V06_PRIMARY_ENABLED"),
+            "legacy_v056m_shadow_enabled": os.getenv("LEGACY_V056M_SHADOW_ENABLED"),
+            "auto_promote_when_ready": os.getenv("AUTO_PROMOTE_WHEN_READY"),
+            "editor_0735_connected": os.getenv("EDITOR_0735_CONNECTED"),
+        }
+    )
+
+
+def _collector_pipeline_class():
+    flags = _v06_runtime_flags()
+    if flags.pipeline_engine is PipelineEngine.V06_SHADOW:
+        from .v06.shadow.pipeline import ParallelShadowCollectorPipeline
+
+        return ParallelShadowCollectorPipeline
+    if flags.pipeline_engine is PipelineEngine.V06_PRIMARY:
+        raise ValueError("v06_primary is reserved for PR-8 controlled canary")
+    return LegacyCollectorPipeline
+
+
 @app.command()
 def collect(
     group: Optional[str] = typer.Option(None, help="collector_queries group_id"),
     query_file: Optional[Path] = typer.Option(None, exists=True, readable=True),
 ) -> None:
     """Run one scheduled query group and sync results to Google Sheet."""
-    pipeline = CollectorPipeline(get_settings())
+    pipeline_cls = _collector_pipeline_class()
+    pipeline = pipeline_cls(get_settings())
     result = asyncio.run(pipeline.collect(group_id=group, query_file=query_file))
     typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
@@ -105,7 +133,7 @@ def doctor(
         except Exception as exc:
             report["firecrawl"] = {
                 "ok": False,
-                "error": f"{type(exc).__name__}: {exc}",
+                "error": f"{type(exc).__name__}: {exc}"[:1000],
             }
     typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
     if (
