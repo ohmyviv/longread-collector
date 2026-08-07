@@ -1,0 +1,103 @@
+[
+  {
+    "id": "turnintl_analysis",
+    "url": "https://global.udn.com/global_vision/story/8662/9667564",
+    "title": "誰不是中華民族？中共《民族團結進步促進法》如何收緊70年民族治理",
+    "source_name": "轉角國際",
+    "published_at": "2026-08-03",
+    "body": "# 誰不是中華民族？中共《民族團結進步促進法》如何收緊70年民族治理\n文／倪世傑\n## 從民族區域自治到民族團結\n中國的民族政策歷經數十年制度調整，治理、法律、國家認同與政策機制相互交織。\n## 法律化的治理轉向\n制度與法律逐步收緊，政策目標也從差異治理轉向共同體治理。\n[Video 1]\n[Video 2]\n## 70年民族治理的制度脈絡\n國家治理、歷史政策、制度設計與法律責任構成新的治理框架。\n## 後續觀察\n政策與制度如何落地，仍需觀察地方治理與法律實施。",
+    "metrics": {"body_prose_chars": 10459, "heading_count": 25, "video_count": 12},
+    "metadata": {
+      "content_identity": {"body_heading": "誰不是中華民族？中共《民族團結進步促進法》如何收緊70年民族治理", "title_similarity": 1.0},
+      "freshness": {"published_at_resolved": "2026-08-03", "published_at_confidence": "high"}
+    },
+    "expected": {"page_surface": "article_page", "medium": "written_article", "genre": "analysis", "asset_class": "media_article", "relationship": "original"}
+  },
+  {
+    "id": "turnintl_feature",
+    "url": "https://global.udn.com/global_vision/story/8662/9670001",
+    "title": "乾旱下的多瑙河：二戰沉船重現，塞爾維亞政府如何應對低水位航運難題？",
+    "source_name": "轉角國際",
+    "published_at": "2026-08-05",
+    "body": "# 乾旱下的多瑙河：二戰沉船重現，塞爾維亞政府如何應對低水位航運難題？\n文／丁昱瑄\n## 多瑙河水位持續下降\n記者整理航運資料與地方現場資訊，追蹤塞爾維亞河道交通與二戰沉船重現。\n[Video 1]\n## 航運與清障\n當地政府與航運單位提出清障措施，居民與業者也受到低水位影響。\n[Video 2]\n## 氣候與河運風險\n研究資料顯示極端乾旱正改變歐洲內河航運。",
+    "metrics": {"body_prose_chars": 4017, "heading_count": 19, "video_count": 13},
+    "metadata": {
+      "content_identity": {"body_heading": "乾旱下的多瑙河：二戰沉船重現，塞爾維亞政府如何應對低水位航運難題？", "title_similarity": 1.0},
+      "freshness": {"published_at_resolved": "2026-08-05", "published_at_confidence": "high"}
+    },
+    "expected": {"page_surface": "article_page", "medium": "written_article", "genre": "reported_feature", "asset_class": "media_article", "relationship": "original"}
+  },
+  {
+    "id": "turnintl_interview",
+    "url": "https://global.udn.com/global_vision/story/8662/9650000",
+    "title": "獨家專訪／烏克蘭「天空守護者」指揮官：攔截型無人機如何扭轉烏俄戰況",
+    "source_name": "轉角國際",
+    "published_at": "2026-07-30",
+    "body": "# 獨家專訪／烏克蘭「天空守護者」指揮官：攔截型無人機如何扭轉烏俄戰況\n烏克蘭現場採訪、攝影／曹雨昕\n## 第一線攔截任務\n指揮官接受專訪，說明攔截型無人機的部署、訓練與夜間作戰。\n[Video 1]\n## 無人機戰術演變\n採訪團隊在現場記錄部隊操作與戰況變化。\n[Video 2]\n## 接下來的挑戰\n受訪者談到電子戰、供應鏈與人員訓練。",
+    "metrics": {"body_prose_chars": 9298, "heading_count": 22, "video_count": 11},
+    "metadata": {
+      "content_identity": {"body_heading": "獨家專訪／烏克蘭「天空守護者」指揮官：攔截型無人機如何扭轉烏俄戰況", "title_similarity": 1.0},
+      "freshness": {"published_at_resolved": "2026-07-30", "published_at_confidence": "high"}
+    },
+    "expected": {"page_surface": "article_page", "medium": "written_article", "genre": "interview", "asset_class": "media_article", "relationship": "original"}
+  },
+  {
+    "id": "cctv_transcript",
+    "url": "https://www.thepaper.cn/newsDetail_forward_33720000",
+    "title": "焦点访谈｜从产品出海到创新出海 “新新三样”夯实中国经济底座",
+    "source_name": "澎湃新闻",
+    "published_at": "2026-08-03",
+    "body": "# 焦点访谈｜从产品出海到创新出海 “新新三样”夯实中国经济底座\n来源：央视网 | 2026年08月03日 20:59:20\n[Video 1](https://example.invalid/program.m3u8)\n时长 15:08\n**央视网消息**（焦点访谈）：当前，中国制造正在从产品出海走向创新出海。\n节目走访多家企业和研究机构，介绍新能源汽车、锂电池和光伏产业的新变化。",
+    "metrics": {"body_prose_chars": 6089, "heading_count": 4, "video_count": 1},
+    "metadata": {
+      "discovery": {"external_link": "https://news.cctv.com/2026/08/03/ARTIexample.shtml"},
+      "content_identity": {"body_heading": "焦点访谈｜从产品出海到创新出海 “新新三样”夯实中国经济底座", "title_similarity": 1.0},
+      "freshness": {"published_at_resolved": "2026-08-03", "published_at_confidence": "high"}
+    },
+    "expected": {"page_surface": "article_page", "medium": "television_transcript", "genre": "reported_feature", "asset_class": "transcript", "relationship": "secondary_republish", "canonical_source": "央视网", "source_action": "replace_with_original"}
+  },
+  {
+    "id": "external_people_shell",
+    "url": "https://www.thepaper.cn/newsDetail_forward_33728076",
+    "title": "聚“绿”成势，结构转型活力足（评论员观察）",
+    "source_name": "澎湃新闻",
+    "published_at": "2026-08-06",
+    "body": "人民日报-有品质的新闻\n人民日报 尹双红 2026-08-06 00:00\n点击前往人民日报客户端阅读全文",
+    "metrics": {"body_prose_chars": 8, "heading_count": 0, "video_count": 0},
+    "metadata": {"discovery": {"external_link": "https://www.peopleapp.com/column/30052856989-500007636419"}, "freshness": {"published_at_resolved": "2026-08-06", "published_at_confidence": "high"}},
+    "expected": {"page_surface": "external_link_stub", "medium": "unknown", "asset_class": "media_article", "relationship": "secondary_republish", "canonical_source": "人民日报", "source_action": "replace_with_original"}
+  },
+  {
+    "id": "boc_media_republish",
+    "url": "https://www.boc.cn/aboutboc/ab8/202608/t20260805_25684106.html",
+    "title": "出海下一程，金融如何托举中企远航【21世纪经济报道】",
+    "source_name": "中国银行",
+    "published_at": "2026-08-05",
+    "body": "# 出海下一程，金融如何托举中企远航【21世纪经济报道】\n8月4日，《21世纪经济报道》刊发《出海下一程，金融如何托举中企远航》，报道中国企业出海过程中金融服务的新需求。\n文章采访多家企业与金融机构，讨论结算、融资、风险管理和全球网络。\n来源：21世纪经济报道",
+    "metrics": {"body_prose_chars": 4589, "heading_count": 3, "video_count": 0},
+    "metadata": {"content_identity": {"body_heading": "出海下一程，金融如何托举中企远航【21世纪经济报道】", "title_similarity": 1.0}, "freshness": {"published_at_resolved": "2026-08-05", "published_at_confidence": "high"}},
+    "expected": {"page_surface": "article_page", "medium": "written_article", "genre": "reported_feature", "asset_class": "media_article", "relationship": "secondary_republish", "canonical_source": "21世纪经济报道", "source_action": "retain_current_display_url"}
+  },
+  {
+    "id": "pbc_primary_republish",
+    "url": "https://www.gdjr.gov.cn/gdjr/jrzx/jryw/content/mpost_44383.html",
+    "title": "中共广东省委金融委员会办公室",
+    "source_name": "",
+    "published_at": "2026-08-05",
+    "body": "# 中国人民银行召开2026年下半年工作会议\n日期：2026-08-05 来源：中国人民银行\n会议指出，要贯彻落实党中央、国务院决策部署。\n会议强调，做好下半年金融工作，实施好适度宽松的货币政策，防范重点领域金融风险。\n版权：中共广东省委金融委员会办公室",
+    "metrics": {"body_prose_chars": 3560, "heading_count": 1, "video_count": 0},
+    "metadata": {"content_identity": {"body_heading": "中国人民银行召开2026年下半年工作会议", "title_similarity": 0.1176}, "freshness": {"body_publication_evidence": {"value": "2026-08-05", "confidence": "high", "raw": "日期：2026-08-05"}, "published_at_resolved": "2026-08-05", "published_at_confidence": "high"}, "source_resolution": {"resolved": "gdjr"}},
+    "expected": {"resolved_title": "中国人民银行召开2026年下半年工作会议", "page_surface": "document_page", "medium": "primary_document", "genre": "policy_document", "asset_class": "primary_document", "relationship": "secondary_republish", "canonical_source": "中国人民银行", "source_action": "find_primary_document"}
+  },
+  {
+    "id": "shanghai_primary_document",
+    "url": "https://www.shanghai.gov.cn/nw12344/20260805/example.html",
+    "title": "闵行区人民政府关于印发《闵行区城市更新“十五五”规划》的通知",
+    "source_name": "上海市政府",
+    "published_at": "2026-08-05",
+    "body": "# 闵行区人民政府关于印发《闵行区城市更新“十五五”规划》的通知\n印发日期：2026-07-28 发布日期：2026-08-05\n闵府发〔2026〕26号\n各镇人民政府、街道办事处，各有关单位：\n现将《闵行区城市更新“十五五”规划》印发给你们，请认真按照执行。\n主办单位：上海市人民政府办公厅",
+    "metrics": {"body_prose_chars": 11384, "heading_count": 2, "video_count": 0},
+    "metadata": {"content_identity": {"body_heading": "闵行区人民政府关于印发《闵行区城市更新“十五五”规划》的通知", "title_similarity": 1.0}, "freshness": {"body_publication_evidence": {"value": "2026-07-28", "confidence": "high", "raw": "印发日期：2026-07-28"}, "published_at_resolved": "2026-07-28", "published_at_confidence": "high"}},
+    "expected": {"published_at": "2026-07-28", "page_surface": "document_page", "medium": "primary_document", "genre": "policy_document", "asset_class": "primary_document", "relationship": "original", "canonical_source": "闵行区人民政府", "source_action": "none"}
+  }
+]
