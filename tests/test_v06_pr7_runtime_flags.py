@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from longread_collector import cli
-
 
 _ENV_KEYS = (
     "PIPELINE_ENGINE",
@@ -21,11 +19,15 @@ def _clear(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_default_runtime_stays_legacy(monkeypatch: pytest.MonkeyPatch) -> None:
+    from longread_collector import cli
+
     _clear(monkeypatch)
     assert cli._collector_pipeline_class() is cli.LegacyCollectorPipeline
 
 
 def test_explicit_shadow_flags_select_sidecar(monkeypatch: pytest.MonkeyPatch) -> None:
+    from longread_collector import cli
+
     _clear(monkeypatch)
     monkeypatch.setenv("PIPELINE_ENGINE", "v06_shadow")
     monkeypatch.setenv("V06_SHADOW_ENABLED", "true")
@@ -36,6 +38,8 @@ def test_explicit_shadow_flags_select_sidecar(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_pr7_still_forbids_primary_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    from longread_collector import cli
+
     _clear(monkeypatch)
     monkeypatch.setenv("PIPELINE_ENGINE", "v06_primary")
     monkeypatch.setenv("V06_PRIMARY_ENABLED", "true")
