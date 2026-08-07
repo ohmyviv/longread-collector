@@ -88,7 +88,7 @@ jobs:
           FIRECRAWL_FALLBACK_DAILY_LIMIT: '3'
         run: longread-collector doctor
 
-      - name: Collect and sync
+      - name: Collect and sync with v0.6 parallel shadow
         env:
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
           JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
@@ -98,4 +98,22 @@ jobs:
           MAX_URLS_PER_RUN: '32'
           MAX_CONCURRENCY: '2'
           FIRECRAWL_FALLBACK_DAILY_LIMIT: '3'
-        run: longread-collector collect --group '${{ steps.group.outputs.group }}'
+          PIPELINE_ENGINE: v06_shadow
+          V06_SHADOW_ENABLED: 'true'
+          V06_WRITE_MODE: events_only
+          V06_PRIMARY_ENABLED: 'false'
+          AUTO_PROMOTE_WHEN_READY: 'false'
+          EDITOR_0735_CONNECTED: 'false'
+        shell: bash
+        run: |
+          set -o pipefail
+          longread-collector collect --group '${{ steps.group.outputs.group }}' | tee collector-result.json
+
+      - name: Archive parallel-shadow evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v06-shadow-${{ steps.group.outputs.group }}-${{ github.run_id }}
+          path: collector-result.json
+          if-no-files-found: ignore
+          retention-days: 30
