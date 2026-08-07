@@ -1,0 +1,109 @@
+[
+  {
+    "id": "hello_world_ceuta",
+    "legacy_action": "select_standard",
+    "expected_action": "select_standard",
+    "expected_track": "standard_longread",
+    "human_weight": 1.0
+  },
+  {
+    "id": "turnintl_analysis",
+    "legacy_action": "reject",
+    "expected_action": "select_standard",
+    "expected_track": "standard_longread",
+    "human_weight": 1.0
+  },
+  {
+    "id": "turnintl_interview",
+    "legacy_action": "reject",
+    "expected_action": "select_standard",
+    "expected_track": "standard_longread",
+    "human_weight": 1.0
+  },
+  {
+    "id": "book_review",
+    "legacy_action": "select_standard",
+    "expected_action": "select_standard",
+    "expected_track": "standard_longread",
+    "human_weight": 0.7
+  },
+  {
+    "id": "legal_commentary",
+    "legacy_action": "select_standard",
+    "expected_action": "select_standard",
+    "expected_track": "standard_longread",
+    "human_weight": 0.7
+  },
+  {
+    "id": "pbc_primary",
+    "legacy_action": "select_standard",
+    "expected_action": "source_chase",
+    "expected_track": "source_chase",
+    "human_weight": 0.7
+  },
+  {
+    "id": "academic_paper",
+    "legacy_action": "select_special",
+    "expected_action": "select_special",
+    "expected_track": "academic",
+    "human_weight": 0.7
+  },
+  {
+    "id": "ideological_commentary",
+    "legacy_action": "select_standard",
+    "expected_action": "reject",
+    "expected_track": "none",
+    "human_weight": 0.8
+  },
+  {
+    "id": "cctv_transcript",
+    "legacy_action": "select_standard",
+    "expected_action": "reject",
+    "expected_track": "none",
+    "human_weight": 2.0,
+    "serious_false_accept": true
+  },
+  {
+    "id": "shanghai_bookfair_event",
+    "legacy_action": "select_standard",
+    "expected_action": "reject",
+    "expected_track": "none",
+    "human_weight": 2.0,
+    "serious_false_accept": true
+  },
+  {
+    "id": "training_event",
+    "legacy_action": "reject",
+    "expected_action": "reject",
+    "expected_track": "none",
+    "human_weight": 0.8
+  },
+  {
+    "id": "promotional_article",
+    "legacy_action": "reject",
+    "expected_action": "reject",
+    "expected_track": "none",
+    "human_weight": 0.8
+  },
+  {
+    "id": "straight_news_brief",
+    "legacy_action": "reject",
+    "expected_action": "reject",
+    "expected_track": "none",
+    "human_weight": 0.8
+  },
+  {
+    "id": "market_data_card",
+    "legacy_action": "reject",
+    "expected_action": "reject",
+    "expected_track": "none",
+    "human_weight": 0.8
+  },
+  {
+    "id": "external_people_shell",
+    "legacy_action": "reject",
+    "expected_action": "source_chase",
+    "expected_track": "source_chase",
+    "human_weight": 0.6
+  }
+]
