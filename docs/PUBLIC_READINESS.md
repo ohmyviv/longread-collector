@@ -38,7 +38,7 @@ They are reserved for trusted manual execution (plus the explicitly retained own
 
 ## Public artifact policy
 
-Action artifacts produced by collector/live-validation workflows should use a short retention window. Public-readiness hardening standardizes the touched workflows on 7 days.
+Action artifacts produced by collector/live-validation workflows use a 7-day retention window in the workflows touched by the Public-readiness change.
 
 ## Local secret hygiene
 
@@ -61,26 +61,45 @@ The helper:
 - runs Gitleaks across all reachable refs with 100% redaction;
 - detects the known failure mode where Gitleaks reports zero scanned commits;
 - cross-checks with TruffleHog;
+- performs a second TruffleHog pass excluding only the Lob detector so known Lob false positives can be independently bounded;
 - writes only sanitized TruffleHog finding metadata;
 - lists historical credential-like filenames for manual review.
 
 Local output is written under `.public-readiness-scan/`, which is ignored by Git.
 
-### TruffleHog Lob detector review note
+The 2026-08-08 adjudication is recorded in `docs/SECRET_SCAN_ADJUDICATION_2026-08-08.md`.
 
-TruffleHog v3.96.0's Lob detector matches `test_` followed by 35 alphanumeric/underscore characters and treats HTTP 422 from the Lob verification endpoint as evidence that a key is active. Python test function names can therefore be reported as verified Lob secrets even when they are ordinary identifiers.
+## Pre-public gate result — 2026-08-08
 
-The helper intentionally preserves the all-detector TruffleHog results for review, then performs a second cross-check excluding only the Lob detector so non-Lob findings remain independently visible. Lob findings must still be manually inspected and may not be dismissed solely because of detector type.
+**SECRET HISTORY GATE: PASS**
 
-## Required gate before changing repository visibility
+Final local full-history evidence:
+- 549 reachable commits;
+- 83 reachable refs, including fetched GitHub PR heads;
+- Gitleaks 8.30.1: 0 findings; integrity PASS;
+- TruffleHog 3.96.0 non-Lob pass: 0 verified/unknown findings;
+- seven all-detector Lob results individually adjudicated as deterministic Python test-identifier false positives;
+- one sensitive-looking historical filename reviewed and found to contain no embedded credential.
 
-Before changing the repository from private to public:
+**WORKFLOW TRUST-BOUNDARY GATE: PASS**
 
-1. Run the complete Git-history secret scan, including reachable branches, tags, and PR refs.
-2. Confirm there are zero active/verified secrets in history after documented false-positive adjudication.
-3. Investigate any historical credential-like filenames or scanner findings.
-4. Revoke/rotate any real credential that was ever committed before making the repository public.
-5. Re-review the final PR diff and confirm ordinary `pull_request` workflows do not reference production secrets or production resources.
-6. After the repository becomes public, run the public-safe test workflow and trusted live validation separately before relying on subsequent scheduled collector evidence.
+Final workflow review confirms:
+- only `tests.yml` is triggered by ordinary `pull_request`;
+- the PR workflow has `contents: read` and does not reference repository secrets, Google Sheet access, or paid/live validation credentials;
+- workflows that reference Google/Jina/Firecrawl secrets are restricted to trusted manual, scheduled, or main-repository branch events;
+- no `pull_request_target` workflow is present;
+- collector schedules and v0.6 shadow safety flags remain unchanged.
 
-The visibility change itself is intentionally outside this PR.
+**GITHUB-HOSTED CI: DEFERRED UNTIL PUBLIC**
+
+The private repository remains blocked before runner allocation by the existing GitHub Billing/Spending Limit condition. No pytest step starts. This is infrastructure failure, not a test assertion failure. After visibility changes to public, immediately rerun the public-safe test workflow and then run trusted live validation separately.
+
+## Remaining steps
+
+1. Merge the Public-readiness hardening PR.
+2. Change repository visibility from private to public.
+3. Confirm the public-safe `Collector tests` workflow actually starts and passes.
+4. Run trusted live validation separately.
+5. Rely only on subsequent naturally scheduled collector runs for Natural Acceptance evidence; do not count manual validation runs.
+
+The visibility change itself is intentionally outside the Public-readiness PR.
