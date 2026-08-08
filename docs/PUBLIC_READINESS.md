@@ -66,12 +66,18 @@ The helper:
 
 Local output is written under `.public-readiness-scan/`, which is ignored by Git.
 
+### TruffleHog Lob detector review note
+
+TruffleHog v3.96.0's Lob detector matches `test_` followed by 35 alphanumeric/underscore characters and treats HTTP 422 from the Lob verification endpoint as evidence that a key is active. Python test function names can therefore be reported as verified Lob secrets even when they are ordinary identifiers.
+
+The helper intentionally preserves the all-detector TruffleHog results for review, then performs a second cross-check excluding only the Lob detector so non-Lob findings remain independently visible. Lob findings must still be manually inspected and may not be dismissed solely because of detector type.
+
 ## Required gate before changing repository visibility
 
 Before changing the repository from private to public:
 
 1. Run the complete Git-history secret scan, including reachable branches, tags, and PR refs.
-2. Confirm there are zero active/verified secrets in history.
+2. Confirm there are zero active/verified secrets in history after documented false-positive adjudication.
 3. Investigate any historical credential-like filenames or scanner findings.
 4. Revoke/rotate any real credential that was ever committed before making the repository public.
 5. Re-review the final PR diff and confirm ordinary `pull_request` workflows do not reference production secrets or production resources.
