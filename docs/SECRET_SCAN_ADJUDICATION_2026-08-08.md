@@ -36,4 +36,8 @@ Evidence supporting the pass:
 
 No credential revocation, rotation, or Git history rewrite is required on the evidence reviewed here.
 
-Repository visibility must still remain private until the final workflow/public-readiness review and Public-readiness PR merge are complete.
+**WORKFLOW TRUST-BOUNDARY GATE: PASS**
+
+The final Public-readiness workflow review confirms ordinary pull requests run only the secret-free `tests.yml` path with `contents: read`; secret-backed workflows are limited to trusted manual, scheduled, or main-repository branch triggers; no `pull_request_target` workflow is present.
+
+GitHub-hosted pytest remains deferred until the repository is public because private-repository jobs are currently blocked before runner allocation by the account Billing/Spending Limit condition.
