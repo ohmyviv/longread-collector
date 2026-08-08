@@ -52,7 +52,22 @@ def normalize_title(value: str) -> str:
 
 
 def begin_snapshot_capture(query_group: str) -> Token:
-    return _CAPTURE_STATE.set(SnapshotCaptureState(query_group=query_group or "all"))
+    """Begin a snapshot capture, sharing same-group nested state.
+
+    PR-7 wraps the authoritative v0.5.6m pipeline with a sidecar capture, while
+    the frozen v0.5.3 operational layer already opens its own capture for the
+    same query group.  A fresh nested ContextVar value would hide the inner
+    full discovery pool from the outer sidecar after the legacy call returns.
+    Reusing the same mutable capture state for same-group nesting preserves the
+    legacy Sheet write and lets the sidecar observe the exact same discoveries.
+
+    Different query groups still receive independent states.
+    """
+    group = query_group or "all"
+    current = _CAPTURE_STATE.get()
+    if current is not None and current.query_group == group:
+        return _CAPTURE_STATE.set(current)
+    return _CAPTURE_STATE.set(SnapshotCaptureState(query_group=group))
 
 
 def current_snapshot_capture() -> SnapshotCaptureState | None:
