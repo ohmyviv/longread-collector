@@ -46,11 +46,31 @@ The root `.gitignore` excludes common local environment files, credential/key fi
 
 `.gitignore` does not remove secrets that were committed in the past.
 
+## Full-history secret scan
+
+On a trusted local clone, install the two scanners and run the repository helper:
+
+```bash
+brew install gitleaks trufflehog
+bash scripts/public_readiness_secret_scan.sh
+```
+
+The helper:
+- fetches branches, tags, and GitHub pull-request head refs;
+- records the reachable commit/ref counts;
+- runs Gitleaks across all reachable refs with 100% redaction;
+- detects the known failure mode where Gitleaks reports zero scanned commits;
+- cross-checks with TruffleHog;
+- writes only sanitized TruffleHog finding metadata;
+- lists historical credential-like filenames for manual review.
+
+Local output is written under `.public-readiness-scan/`, which is ignored by Git.
+
 ## Required gate before changing repository visibility
 
 Before changing the repository from private to public:
 
-1. Scan the complete Git history, including all reachable branches and tags, with at least one dedicated secret scanner (preferably Gitleaks plus TruffleHog cross-check).
+1. Run the complete Git-history secret scan, including reachable branches, tags, and PR refs.
 2. Confirm there are zero active/verified secrets in history.
 3. Investigate any historical credential-like filenames or scanner findings.
 4. Revoke/rotate any real credential that was ever committed before making the repository public.
