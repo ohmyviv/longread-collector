@@ -1,0 +1,34 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Credentials and private keys
+*.pem
+*.key
+google-service-account*.json
+service-account*.json
+credentials*.json
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local logs and runtime output
+*.log
+collector-result.json
+artifacts/
+
+# Local security-scan reports
+gitleaks-report*.json
+trufflehog-report*.json
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/
