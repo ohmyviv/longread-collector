@@ -9,9 +9,7 @@ def test_scheduled_recall_workflow_uses_v11_runner_only() -> None:
 
     assert "python -m longread_collector.final_recall_audit_v11_runner" in text
     assert "python -m longread_collector.final_recall_audit \"${args[@]}\"" not in text
-    assert "final_recall_audit_v11.py" in text
-    assert "final_recall_audit_v11_runner.py" in text
-    assert "registry_matching_v056.py" in text
+    assert "pull_request:" not in text
 
 
 def test_scheduled_recall_workflow_targets_v11_sheets_indirectly() -> None:
@@ -44,4 +42,4 @@ def test_write_mode_verifies_both_v11_sheets() -> None:
     assert "Write verification failed" in text
     assert "RESOLVED_REPORT_DATE" in text
     assert "EFFECTIVE_MODE" in text
-    assert text.count("FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}") >= 3
+    assert text.count("FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}") == 2
