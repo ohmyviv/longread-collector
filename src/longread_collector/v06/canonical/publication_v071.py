@@ -73,8 +73,22 @@ def resolve_publication(
     conflict = bool(conflict_values)
     confidence = min(selected.confidence, 0.45) if conflict else selected.confidence
     source = "conflicting_publication_evidence" if conflict else selected.source
+    selected_value = selected.normalized or selected.value
 
-    evidence_rows: list[Evidence] = []
+    evidence_rows: list[Evidence] = [
+        make_evidence(
+            record.item_id,
+            "publication_date",
+            "published_at",
+            selected_value,
+            confidence=confidence,
+            excerpt=(
+                f"selected_source={source}; priority={selected.priority}; "
+                f"article_local={selected.article_local}; conflict={conflict}"
+            ),
+            extractor=PUBLICATION_VERSION,
+        )
+    ]
     for candidate in candidates[:8]:
         evidence_rows.append(
             make_evidence(
@@ -104,7 +118,7 @@ def resolve_publication(
         )
 
     return PublicationResolution(
-        selected.normalized or selected.value,
+        selected_value,
         confidence,
         source,
         tuple(evidence_rows),
