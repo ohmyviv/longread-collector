@@ -25,6 +25,7 @@ collector-result.json
 artifacts/
 
 # Local security-scan reports
+.public-readiness-scan/
 gitleaks-report*.json
 trufflehog-report*.json
 
