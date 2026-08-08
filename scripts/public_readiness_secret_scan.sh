@@ -48,6 +48,8 @@ rm -f \
   "$OUT_DIR/gitleaks.stderr.log" \
   "$OUT_DIR/trufflehog-redacted.jsonl" \
   "$OUT_DIR/trufflehog.stderr.log" \
+  "$OUT_DIR/trufflehog-non-lob-redacted.jsonl" \
+  "$OUT_DIR/trufflehog-non-lob.stderr.log" \
   "$OUT_DIR/sensitive-history-filenames.txt"
 
 echo "== Gitleaks full reachable-history scan =="
@@ -127,7 +129,6 @@ trufflehog git "file://$ROOT" \
 PIPE_STATUS=("${PIPESTATUS[@]}")
 TRUFFLEHOG_STATUS="${PIPE_STATUS[0]:-1}"
 SANITIZER_STATUS="${PIPE_STATUS[1]:-1}"
-rm -f "$SANITIZER"
 
 read -r TRUFFLEHOG_FINDINGS TRUFFLEHOG_VERIFIED TRUFFLEHOG_UNKNOWN < <(
 python3 - "$OUT_DIR/trufflehog-redacted.jsonl" <<'PY'
@@ -156,6 +157,50 @@ echo "TRUFFLEHOG_FINDINGS=$TRUFFLEHOG_FINDINGS"
 echo "TRUFFLEHOG_VERIFIED=$TRUFFLEHOG_VERIFIED"
 echo "TRUFFLEHOG_UNKNOWN=$TRUFFLEHOG_UNKNOWN"
 
+# TruffleHog v3.96.0's Lob detector matches any test_ + 35 alnum/underscore
+# string and treats HTTP 422 as verified. Python test function names in this
+# repository can therefore become verified false positives. Keep the all-detector
+# evidence above, then run a second pass excluding Lob so other detectors remain
+# independently visible. Lob findings must still be manually reviewed.
+echo "== TruffleHog non-Lob cross-check (sanitized output only) =="
+trufflehog git "file://$ROOT" \
+  --results=verified,unknown \
+  --exclude-detectors=Lob \
+  --json \
+  2>"$OUT_DIR/trufflehog-non-lob.stderr.log" \
+  | python3 "$SANITIZER" "$OUT_DIR/trufflehog-non-lob-redacted.jsonl"
+NON_LOB_PIPE_STATUS=("${PIPESTATUS[@]}")
+TRUFFLEHOG_NON_LOB_STATUS="${NON_LOB_PIPE_STATUS[0]:-1}"
+NON_LOB_SANITIZER_STATUS="${NON_LOB_PIPE_STATUS[1]:-1}"
+rm -f "$SANITIZER"
+
+read -r TRUFFLEHOG_NON_LOB_FINDINGS TRUFFLEHOG_NON_LOB_VERIFIED TRUFFLEHOG_NON_LOB_UNKNOWN < <(
+python3 - "$OUT_DIR/trufflehog-non-lob-redacted.jsonl" <<'PY'
+import json, os, sys
+path = sys.argv[1]
+total = verified = unknown = 0
+if os.path.exists(path):
+    with open(path, encoding='utf-8') as fh:
+        for line in fh:
+            try:
+                item = json.loads(line)
+            except Exception:
+                continue
+            total += 1
+            if item.get('Verified') is True:
+                verified += 1
+            else:
+                unknown += 1
+print(total, verified, unknown)
+PY
+)
+
+echo "TRUFFLEHOG_NON_LOB_EXIT=$TRUFFLEHOG_NON_LOB_STATUS"
+echo "TRUFFLEHOG_NON_LOB_SANITIZER_EXIT=$NON_LOB_SANITIZER_STATUS"
+echo "TRUFFLEHOG_NON_LOB_FINDINGS=$TRUFFLEHOG_NON_LOB_FINDINGS"
+echo "TRUFFLEHOG_NON_LOB_VERIFIED=$TRUFFLEHOG_NON_LOB_VERIFIED"
+echo "TRUFFLEHOG_NON_LOB_UNKNOWN=$TRUFFLEHOG_NON_LOB_UNKNOWN"
+
 echo "== Historical sensitive-looking filenames =="
 git log --all --name-only --pretty=format: \
   | sort -u \
@@ -165,7 +210,7 @@ git log --all --name-only --pretty=format: \
 SENSITIVE_FILENAME_COUNT="$(grep -c . "$OUT_DIR/sensitive-history-filenames.txt" 2>/dev/null || true)"
 echo "SENSITIVE_HISTORY_FILENAMES=$SENSITIVE_FILENAME_COUNT"
 
-if [[ "$GITLEAKS_INTEGRITY" != PASS || "$TRUFFLEHOG_STATUS" -ne 0 || "$SANITIZER_STATUS" -ne 0 ]]; then
+if [[ "$GITLEAKS_INTEGRITY" != PASS || "$TRUFFLEHOG_STATUS" -ne 0 || "$SANITIZER_STATUS" -ne 0 || "$TRUFFLEHOG_NON_LOB_STATUS" -ne 0 || "$NON_LOB_SANITIZER_STATUS" -ne 0 ]]; then
   FINAL_STATUS=SCANNER_INTEGRITY_FAILED
 elif [[ "$GITLEAKS_FINDINGS" -gt 0 || "$TRUFFLEHOG_FINDINGS" -gt 0 || "$SENSITIVE_FILENAME_COUNT" -gt 0 ]]; then
   FINAL_STATUS=REVIEW_REQUIRED
