@@ -2,72 +2,12 @@ name: Offline validation v0.5.6
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'src/longread_collector/freshness_policy_v056.py'
-      - 'src/longread_collector/freshness_policy_v056f.py'
-      - 'src/longread_collector/supplemental_date_evidence_v056f.py'
-      - 'src/longread_collector/prefilter_v056c.py'
-      - 'src/longread_collector/post_extraction_gates_v056.py'
-      - 'src/longread_collector/post_freshness_v056h.py'
-      - 'src/longread_collector/classification_v056h.py'
-      - 'src/longread_collector/classification_v056i.py'
-      - 'src/longread_collector/classification_v056j.py'
-      - 'src/longread_collector/classification_v056m.py'
-      - 'src/longread_collector/content_identity_v056j.py'
-      - 'src/longread_collector/direct_html_v056m.py'
-      - 'src/longread_collector/extraction_v056m.py'
-      - 'src/longread_collector/source_chase_identity_v056j.py'
-      - 'src/longread_collector/source_chase_v056.py'
-      - 'src/longread_collector/pipeline_v05.py'
-      - 'src/longread_collector/pipeline_v054.py'
-      - 'src/longread_collector/pipeline_v056d.py'
-      - 'src/longread_collector/pipeline_v056f.py'
-      - 'src/longread_collector/page_gate_policy_v056.py'
-      - 'src/longread_collector/page_gate_policy_v056m.py'
-      - 'src/longread_collector/prefilter_v056m.py'
-      - 'src/longread_collector/publication_date_v056m.py'
-      - 'src/longread_collector/post_extraction_gates_v056m.py'
-      - 'src/longread_collector/ranked_freshness_v056.py'
-      - 'src/longread_collector/ranked_selection_v056.py'
-      - 'src/longread_collector/ranked_selection_plan_v056.py'
-      - 'src/longread_collector/selection_plan_v056.py'
-      - 'src/longread_collector/initial_selection_threshold_v056g.py'
-      - 'src/longread_collector/staged_reserve_v056.py'
-      - 'src/longread_collector/staged_reserve_v056m.py'
-      - 'src/longread_collector/offline_replay_v056.py'
-      - 'src/longread_collector/offline_replay_v056g.py'
-      - 'src/longread_collector/offline_selector_debug_v056g.py'
-      - 'src/longread_collector/offline_replay_sheet_adapter_v056.py'
-      - 'src/longread_collector/offline_replay_v056f_runner.py'
-      - 'src/longread_collector/final_recall_audit_v11.py'
-      - 'src/longread_collector/final_recall_audit_v11_runner.py'
-      - 'src/longread_collector/registry_matching_v056.py'
-      - 'tests/test_freshness_policy_v056.py'
-      - 'tests/test_freshness_policy_v056f.py'
-      - 'tests/test_supplemental_date_evidence_v056f.py'
-      - 'tests/test_page_gate_policy_v056.py'
-      - 'tests/test_post_extraction_quality_v056h.py'
-      - 'tests/test_post_extraction_quality_v056i.py'
-      - 'tests/test_content_identity_v056j.py'
-      - 'tests/test_source_chase_identity_v056j.py'
-      - 'tests/test_reserve_only_v056f.py'
-      - 'tests/test_offline_replay_v056.py'
-      - 'tests/test_offline_replay_v056g.py'
-      - 'tests/test_offline_replay_sheet_adapter_v056.py'
-      - 'tests/test_offline_selector_debug_v056.py'
-      - 'tests/test_final_recall_audit_v11.py'
-      - 'tests/test_registry_matching_v056.py'
-      - 'tests/test_staged_reserve_v056.py'
-      - 'tests/test_zh_midday_day1_v056m.py'
-      - 'tests/test_investigative_followup_v056m.py'
-      - '.github/workflows/offline-validation-v056.yml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: offline-validation-v056-${{ github.event.pull_request.number || github.ref }}
+  group: offline-validation-v056-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -185,3 +125,4 @@ jobs:
           name: offline-validation-v056
           path: artifacts/
           if-no-files-found: warn
+          retention-days: 7

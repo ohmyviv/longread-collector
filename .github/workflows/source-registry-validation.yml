@@ -11,13 +11,6 @@ on:
       - 'src/longread_collector/source_validation.py'
       - 'tests/test_source_registry_v1.py'
       - '.github/workflows/source-registry-validation.yml'
-  pull_request:
-    paths:
-      - 'config/source_registry_v1.csv'
-      - 'src/longread_collector/source_registry_seed.py'
-      - 'src/longread_collector/source_validation.py'
-      - 'tests/test_source_registry_v1.py'
-      - '.github/workflows/source-registry-validation.yml'
 
 permissions:
   contents: read
@@ -69,3 +62,4 @@ jobs:
           name: source-registry-validation
           path: artifacts/
           if-no-files-found: warn
+          retention-days: 7
