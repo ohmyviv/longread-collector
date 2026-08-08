@@ -116,4 +116,4 @@ jobs:
           name: v06-shadow-${{ steps.group.outputs.group }}-${{ github.run_id }}
           path: collector-result.json
           if-no-files-found: ignore
-          retention-days: 30
+          retention-days: 7
