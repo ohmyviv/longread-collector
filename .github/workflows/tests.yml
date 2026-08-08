@@ -4,13 +4,14 @@ on:
   pull_request:
   push:
     branches:
-      - "agent/**"
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: collector-tests-${{ github.ref }}
+  group: collector-tests-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
