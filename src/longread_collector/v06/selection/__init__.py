@@ -7,7 +7,7 @@ from .planning import (
     legacy_static_plan,
 )
 from .policy import POLICY_VERSION, PolicyEvaluation, evaluate_policy
-from .portfolio import (
+from .portfolio_v071 import (
     PORTFOLIO_VERSION,
     PolicyPortfolioSelector,
     PortfolioSelectionResult,
