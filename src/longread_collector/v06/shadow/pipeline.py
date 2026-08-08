@@ -74,12 +74,35 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
                     now_bj=datetime.now(self.tz),
                 )
                 shadow_payload = report.as_dict()
+                expected_snapshot_count = int(
+                    legacy_result.get("discovery_snapshot_rows") or 0
+                )
+                actual_snapshot_count = int(
+                    shadow_payload.get("discovery_snapshot_count") or 0
+                )
+                capture_gap_count = sum(
+                    str(item.get("prefilter_status", ""))
+                    == "acquired_without_snapshot_row"
+                    for item in shadow_payload.get("items", ())
+                    if isinstance(item, dict)
+                )
+                snapshot_status = str(
+                    legacy_result.get("discovery_snapshot_status", "") or ""
+                )
                 shadow_payload.update(
                     {
                         "pipeline_version": PARALLEL_SHADOW_PIPELINE_VERSION,
                         "control_version": LEGACY_CONTROL_VERSION,
                         "snapshot_capture_error": (
                             snapshot.snapshot_error if snapshot is not None else ""
+                        ),
+                        "control_discovery_snapshot_count": expected_snapshot_count,
+                        "capture_gap_count": capture_gap_count,
+                        "full_snapshot_invariant": (
+                            snapshot_status == "success"
+                            and expected_snapshot_count > 0
+                            and actual_snapshot_count == expected_snapshot_count
+                            and capture_gap_count == 0
                         ),
                     }
                 )
@@ -94,6 +117,7 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
                     "shadow_firecrawl_request_count": 0,
                     "shadow_incremental_cost": 0.0,
                     "control_result_preserved": True,
+                    "full_snapshot_invariant": False,
                 }
             legacy_result["v06_shadow"] = shadow_payload
             legacy_result["v06_shadow_version"] = PARALLEL_SHADOW_PIPELINE_VERSION
