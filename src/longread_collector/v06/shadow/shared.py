@@ -17,7 +17,7 @@ from ..contracts import (
     TechnicalStatus,
 )
 
-SHARED_ACQUISITION_VERSION = "shared-control-acquisition-v0.6-pr7"
+SHARED_ACQUISITION_VERSION = "shared-control-acquisition-v0.6-pr7.3.1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +55,10 @@ def share_control_acquisition(
 
     Control attempts remain provenance only. They are deliberately omitted from
     the shadow bundle so StageEvent request metrics cannot double-count network
-    traffic already paid for by v0.5.6m.
+    traffic already paid for by v0.5.6m. Factual control evidence, including
+    structured publication-date candidates, is preserved on the shared bundle;
+    the shadow acquisition StageEvent itself carries only the zero-request share
+    marker so operational metrics remain unchanged.
     """
 
     control_requests = sum(bool(attempt.request_sent) for attempt in control.attempts)
@@ -64,7 +67,7 @@ def share_control_acquisition(
         for attempt in control.attempts
     )
     fingerprint = body_fingerprint(control)
-    evidence = (
+    shared_evidence = (
         Evidence(
             evidence_id=f"{shadow_item_id}-shared-control-body",
             evidence_type="shared_control_acquisition",
@@ -91,7 +94,7 @@ def share_control_acquisition(
         best_attempt_id="",
         total_cost=0.0,
         total_latency_ms=0,
-        evidence=evidence,
+        evidence=(*control.evidence, *shared_evidence),
     )
     event = make_stage_event(
         run_id=shared.run_id,
@@ -120,8 +123,9 @@ def share_control_acquisition(
             "body_chars": shared.content_length,
             "prose_chars": shared.prose_length,
             "gate_action": gate_action.value,
+            "preserved_control_evidence_count": len(control.evidence),
         },
-        evidence=evidence,
+        evidence=shared_evidence,
     )
     return SharedAcquisition(
         bundle=shared,
