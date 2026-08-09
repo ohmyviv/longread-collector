@@ -196,6 +196,21 @@ def test_same_host_canonical_link_does_not_create_republish_relation() -> None:
     assert result.source_action is SourceAction.NONE
 
 
+def test_parent_subdomain_canonical_link_remains_same_source() -> None:
+    record = _record(
+        "same-site-canonical",
+        url="https://m.publisher.example/story/123",
+    )
+    bundle = _bundle(
+        record.item_id,
+        canonical_links=("https://publisher.example/story/123",),
+    )
+    result = CanonicalArticleResolver().canonicalize(_context(), record, bundle)
+
+    assert result.source_relationship is SourceRelationship.ORIGINAL
+    assert result.source_action is SourceAction.NONE
+
+
 def test_reuters_signature_on_non_wire_host_is_wire_republish() -> None:
     title = "Syndicated world report"
     record = _record(
