@@ -287,12 +287,25 @@ def _credible_external_url(current_url: str, candidate: str) -> bool:
         return False
     current = host(current_url)
     target = host(candidate)
-    if not current or not target or current == target:
+    if not current or not target or _same_site(current, target):
         return False
     if re.search(r"(?:^|\.)(?:cdn|static|assets?|images?|img)\.", target):
         return False
     path = urlsplit(candidate).path
     return bool(path and path != "/")
+
+
+def _same_site(left: str, right: str) -> bool:
+    """Treat direct parent/subdomain canonicalization as one hosting site."""
+    return bool(
+        left
+        and right
+        and (
+            left == right
+            or left.endswith("." + right)
+            or right.endswith("." + left)
+        )
+    )
 
 
 def _publisher_from_url(url: str) -> str:
