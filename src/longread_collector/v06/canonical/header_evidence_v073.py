@@ -6,6 +6,7 @@ performs no network I/O and does not apply freshness policy.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 import re
 
@@ -39,11 +40,8 @@ def enrich_header_publication_evidence(
     """
 
     metadata = dict(record.raw_metadata)
-    freshness = metadata.get("freshness")
-    if not isinstance(freshness, dict):
-        freshness = {}
-    else:
-        freshness = dict(freshness)
+    freshness_raw = metadata.get("freshness")
+    freshness = dict(freshness_raw) if isinstance(freshness_raw, Mapping) else {}
 
     changed = False
     publication_url = record.url
@@ -58,7 +56,7 @@ def enrich_header_publication_evidence(
             changed = True
 
     existing = freshness.get("body_publication_evidence")
-    if not (isinstance(existing, dict) and normalize_space(existing.get("value"))):
+    if not (isinstance(existing, Mapping) and normalize_space(existing.get("value"))):
         body = bundle.body_markdown or bundle.body_text or ""
         sample = _article_header_sample(body, record.title_hint or bundle.raw_title)
         match = _ZH_SOURCE_TIMESTAMP_RE.search(sample)
