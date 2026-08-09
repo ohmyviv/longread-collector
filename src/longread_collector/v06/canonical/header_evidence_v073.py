@@ -16,8 +16,10 @@ HEADER_EVIDENCE_VERSION = "canonical-header-evidence-v0.6-pr7.3"
 
 _ZH_SOURCE_TIMESTAMP_RE = re.compile(
     r"(?P<date>(?:19|20)\d{2}年\d{1,2}月\d{1,2}日)"
-    r"(?:\s*(?P<time>\d{1,2}:\d{2}))?\s*"
-    r"(?:来源|來源)\s*[：:]?",
+    r"(?:\s*(?P<time>\d{1,2}:\d{2}))?"
+    # Markdown extraction commonly leaves the timestamp in bold immediately
+    # before the source label, e.g. **2026年08月08日08:12**来源：...
+    r"\s*[*_]{0,3}\s*(?:来源|來源)\s*[：:]?",
     re.I,
 )
 
