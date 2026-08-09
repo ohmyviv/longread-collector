@@ -20,6 +20,7 @@ from ..contracts import (
     DiscoveryRecord,
     RunContext,
 )
+from .header_evidence_v073 import enrich_header_publication_evidence
 from .publication_v073 import (
     PUBLICATION_VERSION,
     normalize_publication_date,
@@ -43,7 +44,8 @@ class CanonicalArticleResolver(_PR71CanonicalArticleResolver):
         bundle: AcquisitionBundle,
     ) -> CanonicalArticle:
         base = super().canonicalize(context, record, bundle)
-        publication = resolve_publication(record, bundle)
+        publication_record = enrich_header_publication_evidence(record, bundle)
+        publication = resolve_publication(publication_record, bundle)
         source = resolve_source(
             record,
             bundle,
