@@ -64,16 +64,14 @@ class CanonicalArticleResolver(_PR71CanonicalArticleResolver):
             ),
         )
 
+        # PR-7.3 is evidence-authoritative. If the richer resolver cannot
+        # establish an initial publication fact, keep it unknown. Do not revive
+        # PR-7.1's aggregate result after PR-7.3 has deliberately demoted the
+        # underlying evidence (for example a URL-path date or republication
+        # timestamp) to contextual-only.
         published_at = publication.value
         published_confidence = publication.confidence
         published_source = publication.source
-        if not published_at and base.published_at and publication.status == "unknown":
-            # Compatibility fallback for an unforeseen legacy evidence shape.
-            published_at = base.published_at
-            published_confidence = base.published_at_confidence
-            published_source = str(
-                base.freshness_facts.get("published_at_source", "pr7.1_fallback")
-            )
 
         facts = dict(base.freshness_facts)
         facts.update(
