@@ -20,7 +20,10 @@ from ..contracts import (
     DiscoveryRecord,
     RunContext,
 )
-from .header_evidence_v073 import enrich_header_publication_evidence
+from .header_evidence_v073 import (
+    demoted_url_publication_value,
+    enrich_header_publication_evidence,
+)
 from .publication_v073 import (
     PUBLICATION_VERSION,
     normalize_publication_date,
@@ -45,7 +48,11 @@ class CanonicalArticleResolver(_PR71CanonicalArticleResolver):
     ) -> CanonicalArticle:
         base = super().canonicalize(context, record, bundle)
         publication_record = enrich_header_publication_evidence(record, bundle)
-        publication = resolve_publication(publication_record, bundle)
+        publication_record, publication_bundle = _strip_demoted_url_date_projections(
+            publication_record,
+            bundle,
+        )
+        publication = resolve_publication(publication_record, publication_bundle)
         source = resolve_source(
             record,
             bundle,
@@ -120,6 +127,50 @@ class CanonicalArticleResolver(_PR71CanonicalArticleResolver):
             confidence_by_field=confidence,
             evidence=evidence,
         )
+
+
+def _strip_demoted_url_date_projections(
+    record: DiscoveryRecord,
+    bundle: AcquisitionBundle,
+) -> tuple[DiscoveryRecord, AcquisitionBundle]:
+    """Remove adapter copies of a known URL-derived legacy publication fact.
+
+    Legacy/full-parallel adapters flatten resolved publication dates into both
+    discovery hints and acquisition raw dates. Once PR-7.3 has identified that
+    aggregate as URL-derived, those generic copies must not silently regain
+    selectable acquisition/discovery provenance. Independent dates with a
+    different normalized value remain untouched; article-local/page evidence is
+    collected through its own explicit paths.
+    """
+
+    demoted = demoted_url_publication_value(record)
+    target = _publication_projection_key(demoted)
+    if not target:
+        return record, bundle
+
+    published_at_hints = tuple(
+        value
+        for value in record.published_at_hints
+        if _publication_projection_key(value) != target
+    )
+    raw_dates = tuple(
+        value
+        for value in bundle.raw_dates
+        if _publication_projection_key(value) != target
+    )
+
+    if published_at_hints != record.published_at_hints:
+        record = replace(record, published_at_hints=published_at_hints)
+    if raw_dates != bundle.raw_dates:
+        bundle = replace(bundle, raw_dates=raw_dates)
+    return record, bundle
+
+
+def _publication_projection_key(value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    return normalize_publication_date(raw) or raw
 
 
 def _age_days(context: RunContext, published_at: str) -> int | None:
