@@ -51,7 +51,7 @@ def resolve_publication(
     selectable = [item for item in candidates if item.selectable]
 
     if not selectable:
-        profile = _base._profile(candidates, selected=None, conflict_values=())
+        profile = _profile(candidates, selected=None, conflict_values=())
         status = "non_publication_only" if candidates else "unknown"
         evidence = _profile_evidence(record.item_id, profile, status=status)
         return PublicationResolution(
@@ -70,7 +70,7 @@ def resolve_publication(
     status = "conflicting" if conflict else ("weak" if confidence < 0.70 else "resolved")
     source = "conflicting_publication_evidence" if conflict else selected.source
 
-    profile = _base._profile(
+    profile = _profile(
         candidates,
         selected=selected,
         conflict_values=conflict_values,
@@ -297,6 +297,59 @@ def _semantic(role: str, source: str, raw: str) -> str:
         f"{source} {raw}",
         default="published" if normalized_role == "published" else "unknown",
     )
+
+
+def _profile(
+    candidates: list[_base._Candidate],
+    *,
+    selected: _base._Candidate | None,
+    conflict_values: tuple[str, ...],
+) -> tuple[dict[str, object], ...]:
+    """Build the audit profile with contextual semantics taking precedence.
+
+    PR-7.3 made URL-path evidence non-selectable, but its original profile helper
+    labelled a same-day URL candidate as ``supports`` before checking URL
+    provenance. PR-7.3.1 keeps every URL-path row contextual even when it
+    normalizes to the same date as the selected page fact.
+    """
+
+    rows: list[dict[str, object]] = []
+    conflicts = set(conflict_values)
+    for candidate in candidates:
+        if selected is not None and candidate is selected:
+            relation = "selected"
+        elif (
+            candidate.semantic in _base._CONTEXT_ONLY_SEMANTICS
+            or candidate.provenance == "url_path"
+        ):
+            relation = "contextual"
+        elif (
+            selected is not None
+            and candidate.normalized
+            and candidate.normalized == selected.normalized
+        ):
+            relation = "supports"
+        elif (
+            candidate.normalized in conflicts
+            and candidate.semantic == (selected.semantic if selected else "")
+        ):
+            relation = "conflicts"
+        else:
+            relation = "alternative"
+        rows.append(
+            {
+                "source": candidate.source,
+                "semantic": candidate.semantic,
+                "provenance": candidate.provenance,
+                "article_local": candidate.article_local,
+                "raw": candidate.raw,
+                "normalized": candidate.normalized,
+                "confidence": round(candidate.confidence, 4),
+                "timezone_basis": candidate.timezone_basis,
+                "relation": relation,
+            }
+        )
+    return tuple(rows)
 
 
 def _profile_evidence(
