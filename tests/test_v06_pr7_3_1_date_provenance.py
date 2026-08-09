@@ -18,7 +18,6 @@ from longread_collector.v06.legacy import (
     PUBLICATION_EVIDENCE_BRIDGE_VERSION,
     LegacyV056mAdapter,
 )
-from longread_collector.v06.shadow.pipeline import PARALLEL_SHADOW_PIPELINE_VERSION
 from longread_collector.v06.shadow.shared import share_control_acquisition
 
 
@@ -305,6 +304,11 @@ def test_legacy_bridge_and_shared_acquisition_preserve_structured_date_evidence(
 
 
 def test_pr731_versions_are_explicit_without_touching_l5() -> None:
+    # Importing the legacy runtime pipeline mutates frozen compatibility module
+    # globals by design. Keep this import inside the test so collection does not
+    # perturb unrelated legacy tests that run earlier in the suite.
+    from longread_collector.v06.shadow.pipeline import PARALLEL_SHADOW_PIPELINE_VERSION
+
     assert PUBLICATION_VERSION == "canonical-publication-v0.6-pr7.3.1"
     assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.1"
     assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.1"
