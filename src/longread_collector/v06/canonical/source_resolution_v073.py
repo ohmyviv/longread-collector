@@ -104,6 +104,11 @@ _TRANSLATION_PATTERNS = (
         re.I,
     ),
 )
+_SOURCE_LINK_RE = re.compile(
+    r"(?:来源|來源|稿源|原载|原載|转载自|轉載自)\s*[：:]?\s*"
+    r"\[(?P<publisher>[^\]\n]{2,80})\]\((?P<url>https?://[^)\s]+)\)",
+    re.I,
+)
 
 
 def resolve_source(
@@ -128,11 +133,26 @@ def resolve_source(
     external_target, target_kind = _external_original_target(record, bundle)
     target_publisher = _publisher_from_url(external_target) if external_target else ""
 
+    source_link_publisher, source_link_url, source_link_excerpt = _source_link_evidence(body)
+    if source_link_url and not _credible_external_url(record.url, source_link_url):
+        source_link_url = ""
+    source_link_target = (
+        _publisher_from_url(source_link_url) or source_link_publisher
+        if source_link_url
+        else ""
+    )
+
     wire_service, wire_type, wire_excerpt, direct_wire = _wire_evidence(
         record.url,
         author=author,
         body=body,
     )
+    if not wire_service and source_link_url:
+        linked_wire = _wire_domain(host(source_link_url))
+        if linked_wire:
+            wire_service = linked_wire
+            wire_type = "explicit_source_link"
+            wire_excerpt = source_link_excerpt
     translation_publisher, translation_excerpt = _translation_evidence(body)
 
     relationship = base.relationship
@@ -169,12 +189,23 @@ def resolve_source(
         canonical_source = wire_service
         confidence = max(confidence, 0.96)
         reason = f"strong_wire_evidence:{wire_type}"
-        if external_target and _wire_domain(host(external_target)) == wire_service:
+        if source_link_url and _wire_domain(host(source_link_url)) == wire_service:
+            canonical_url = source_link_url
+            action = SourceAction.REPLACE_WITH_ORIGINAL
+        elif external_target and _wire_domain(host(external_target)) == wire_service:
             canonical_url = external_target
             action = SourceAction.REPLACE_WITH_ORIGINAL
         else:
             canonical_url = record.url
             action = SourceAction.FIND_ORIGINAL_ARTICLE
+    elif source_link_url:
+        relationship = SourceRelationship.SECONDARY_REPUBLISH
+        action = SourceAction.REPLACE_WITH_ORIGINAL
+        canonical_url = source_link_url
+        canonical_source = source_link_target or base.canonical_source
+        original_publisher = source_link_target or base.original_publisher or canonical_source
+        confidence = max(confidence, 0.97)
+        reason = "explicit_original_source_link"
     elif external_target:
         relationship = SourceRelationship.SECONDARY_REPUBLISH
         action = SourceAction.REPLACE_WITH_ORIGINAL
@@ -209,6 +240,22 @@ def resolve_source(
                 excerpt=(
                     f"external rel=canonical target; current_host={current_host}; "
                     f"target_host={host(external_target)}"
+                ),
+                extractor=SOURCE_VERSION,
+            )
+        )
+
+    if source_link_url:
+        evidence.append(
+            make_evidence(
+                record.item_id,
+                "explicit_source_link",
+                "canonical_content_url",
+                source_link_url,
+                confidence=0.98,
+                excerpt=(
+                    f"publisher={source_link_publisher}; target={source_link_target}; "
+                    f"{source_link_excerpt}"
                 ),
                 extractor=SOURCE_VERSION,
             )
@@ -374,6 +421,18 @@ def _translation_evidence(body: str) -> tuple[str, str]:
         if publisher:
             return publisher, _excerpt(sample, match)
     return "", ""
+
+
+def _source_link_evidence(body: str) -> tuple[str, str, str]:
+    sample = body[:12000]
+    match = _SOURCE_LINK_RE.search(sample)
+    if match is None:
+        return "", "", ""
+    publisher = _clean_publisher(match.group("publisher"))
+    url = normalize_space(match.group("url"))
+    if not publisher or not url:
+        return "", "", ""
+    return publisher, url, _excerpt(sample, match)
 
 
 def _clean_publisher(value: str) -> str:
