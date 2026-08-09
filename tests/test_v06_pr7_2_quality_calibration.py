@@ -15,10 +15,6 @@ from longread_collector.v06.contracts import (
 )
 from longread_collector.v06.editorial.service_v071 import EditorialJudge as PR71EditorialJudge
 from longread_collector.v06.editorial.service_v072 import EditorialJudge as PR72EditorialJudge
-from longread_collector.v06.shadow.pipeline import (
-    LEGACY_CONTROL_VERSION,
-    PARALLEL_SHADOW_PIPELINE_VERSION,
-)
 
 
 def _context() -> RunContext:
@@ -230,5 +226,10 @@ def test_concise_investigation_is_exempt_from_short_news_fallback_guard() -> Non
 
 
 def test_pr72_shadow_version_changes_without_changing_control_authority() -> None:
+    from longread_collector.v06.shadow.pipeline import (
+        LEGACY_CONTROL_VERSION,
+        PARALLEL_SHADOW_PIPELINE_VERSION,
+    )
+
     assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.2"
     assert LEGACY_CONTROL_VERSION == "collector-v0.5.6m"
