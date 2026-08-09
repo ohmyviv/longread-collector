@@ -225,11 +225,13 @@ def test_concise_investigation_is_exempt_from_short_news_fallback_guard() -> Non
     )
 
 
-def test_pr72_shadow_version_changes_without_changing_control_authority() -> None:
+def test_runtime_version_advances_without_changing_pr72_l5_or_control_authority() -> None:
+    from longread_collector.v06.editorial.service_v072 import EDITORIAL_JUDGE_VERSION
     from longread_collector.v06.shadow.pipeline import (
         LEGACY_CONTROL_VERSION,
         PARALLEL_SHADOW_PIPELINE_VERSION,
     )
 
-    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.2"
+    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3"
+    assert EDITORIAL_JUDGE_VERSION == "editorial-judge-v0.6-pr7.2"
     assert LEGACY_CONTROL_VERSION == "collector-v0.5.6m"
