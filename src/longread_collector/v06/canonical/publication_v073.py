@@ -21,10 +21,16 @@ PUBLICATION_VERSION = "canonical-publication-v0.6-pr7.3"
 
 _BJT = timezone(timedelta(hours=8))
 
+# These semantics can establish the content's initial publication/issue fact.
 _PRIMARY_SEMANTICS = frozenset(
     {"published", "issued", "created", "original_published", "unknown"}
 )
-_CONTEXT_ONLY_SEMANTICS = frozenset({"updated"})
+# Update, republication, and translation dates are evidence about the current
+# surface or distribution event. They must not refresh an otherwise unknown
+# original publication date.
+_CONTEXT_ONLY_SEMANTICS = frozenset(
+    {"updated", "republished", "translated_published"}
+)
 _PROVENANCE_RANK = {
     "article_header": 6,
     "article_local_metadata": 5,
@@ -38,10 +44,17 @@ _SEMANTIC_RANK = {
     "issued": 4,
     "published": 4,
     "created": 4,
-    "republished": 3,
     "unknown": 2,
+    "republished": 1,
+    "translated_published": 1,
     "updated": 1,
 }
+
+_DATE_TOKEN = (
+    r"(?:[A-Z][a-z]+\s+\d{1,2},\s+(?:19|20)\d{2}|"
+    r"(?:19|20)\d{2}-\d{1,2}-\d{1,2})"
+)
+_ZH_DATE_TOKEN = r"(?:19|20)\d{2}[-/.年]\d{1,2}[-/.月]\d{1,2}(?:日)?"
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,10 +92,14 @@ class _Candidate:
 
     @property
     def sort_key(self) -> tuple[int, int, int, float, int]:
+        # PR-7.1 compatibility boundary: article-local evidence beats weaker
+        # page/acquisition/discovery metadata. Semantic specificity only breaks
+        # ties after provenance, so weak "originally published" metadata cannot
+        # outrank a strong article-header publication date.
         return (
-            _SEMANTIC_RANK.get(self.semantic, 0),
-            _PROVENANCE_RANK.get(self.provenance, 0),
             1 if self.article_local else 0,
+            _PROVENANCE_RANK.get(self.provenance, 0),
+            _SEMANTIC_RANK.get(self.semantic, 0),
             self.confidence,
             -self.ordinal,
         )
@@ -211,9 +228,10 @@ def _collect_candidates(
     body = bundle.body_markdown or bundle.body_text or ""
     title = record.title_hint or bundle.raw_title
     for value, source, raw, semantic in _extract_article_local_dates(body, title):
+        confidence = 0.90 if semantic in _CONTEXT_ONLY_SEMANTICS else 0.96
         yield _candidate(
             value,
-            0.96 if semantic != "updated" else 0.90,
+            confidence,
             source,
             raw,
             semantic=semantic,
@@ -277,13 +295,13 @@ def _collect_candidates(
             )
             ordinal += 1
 
-    url_date = _url_path_date(record.url)
+    url_date, url_source, url_raw = _url_path_date(record.url)
     if url_date:
         yield _candidate(
             url_date,
             0.48,
-            "url_path_date",
-            url_date,
+            url_source,
+            url_raw,
             semantic="unknown",
             provenance="url_path",
             article_local=False,
@@ -345,10 +363,19 @@ def _body_source(source: str) -> bool:
 
 
 def _semantic_from_text(value: str, default: str = "published") -> str:
-    lowered = normalize_space(value).lower()
+    lowered = normalize_space(value).lower().replace("_", " ")
     if re.search(r"\b(?:last\s+)?updated\b|\bmodified\b|更新|最後更新|最后更新", lowered):
         return "updated"
-    if re.search(r"\boriginally\s+published\b|首次(?:发表|發表|发布|發布)|首发|首發", lowered):
+    if re.search(
+        r"\btranslation\s+(?:published|date)\b|\btranslated\s+(?:on|at)\b|"
+        r"翻译日期|翻譯日期|译文发布日期|譯文發布日期",
+        lowered,
+    ):
+        return "translated_published"
+    if re.search(
+        r"\boriginally\s+published\b|首次(?:发表|發表|发布|發布)|首发|首發",
+        lowered,
+    ):
         return "original_published"
     if re.search(r"\brepublished\b|\breprinted\b|转载日期|轉載日期|重刊", lowered):
         return "republished"
@@ -368,63 +395,74 @@ def _extract_article_local_dates(
     sample = _article_start(body, title)[:7000]
     patterns: tuple[tuple[str, str, str], ...] = (
         (
-            r"(?:印发日期|印發日期)\s*[：:]?\s*"
-            r"((?:19|20)\d{2}[-/.年]\d{1,2}[-/.月]\d{1,2}(?:日)?)",
+            rf"(?m)^\s*(?:印发日期|印發日期)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
             "article_header_issued_date",
             "issued",
         ),
         (
-            r"(?:发布时间|發布時間|发布日期|發布日期|文章日期|出版时间|出版時間|来源日期|來源日期)"
-            r"\s*[：:]?\s*((?:19|20)\d{2}[-/.年]\d{1,2}[-/.月]\d{1,2}(?:日)?)",
-            "article_header_labeled_date",
-            "published",
-        ),
-        (
-            r"(?:更新日期|更新时间|更新時間|最后更新|最後更新)\s*[：:]?\s*"
-            r"((?:19|20)\d{2}[-/.年]\d{1,2}[-/.月]\d{1,2}(?:日)?)",
+            rf"(?m)^\s*(?:更新时间|更新時間|更新日期|最后更新|最後更新)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
             "article_header_updated_date",
             "updated",
         ),
         (
-            r"(?:首次发表|首次發表|首次发布|首次發布|首发日期|首發日期)\s*[：:]?\s*"
-            r"((?:19|20)\d{2}[-/.年]\d{1,2}[-/.月]\d{1,2}(?:日)?)",
+            rf"(?m)^\s*(?:首次发表|首次發表|首次发布|首次發布|首发日期|首發日期)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
             "article_header_original_published_date",
             "original_published",
         ),
         (
-            r"(?<![\w\u4e00-\u9fff])日期\s*[：:]?\s*"
-            r"((?:19|20)\d{2}[-/.年]\d{1,2}[-/.月]\d{1,2}(?:日)?)",
+            rf"(?m)^\s*(?:转载日期|轉載日期|重刊日期|再版日期)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
+            "article_header_republished_date",
+            "republished",
+        ),
+        (
+            rf"(?m)^\s*(?:翻译日期|翻譯日期|译文发布日期|譯文發布日期)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
+            "article_header_translation_published_date",
+            "translated_published",
+        ),
+        (
+            rf"(?m)^\s*(?:发布时间|發布時間|(?<!译文)(?<!譯文)发布日期|(?<!譯文)發布日期|文章日期|出版时间|出版時間|来源日期|來源日期)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
+            "article_header_labeled_date",
+            "published",
+        ),
+        (
+            rf"(?m)^\s*日期\s*[：:]?\s*({_ZH_DATE_TOKEN})",
             "article_header_generic_date",
             "published",
         ),
         (
-            r"(?:Originally\s+published)(?:\s+on)?\s*[:：-]?\s*"
-            r"([A-Z][a-z]+\s+\d{1,2},\s+(?:19|20)\d{2}|(?:19|20)\d{2}-\d{1,2}-\d{1,2})",
+            rf"(?im)^\s*Originally\s+published(?:\s+on)?\s*[:：-]?\s*({_DATE_TOKEN})",
             "article_header_original_published_date",
             "original_published",
         ),
         (
-            r"(?:Published|Posted)(?:\s+on)?\s*[:：-]?\s*"
-            r"([A-Z][a-z]+\s+\d{1,2},\s+(?:19|20)\d{2}|(?:19|20)\d{2}-\d{1,2}-\d{1,2})",
+            rf"(?im)^\s*(?:Republished|Reprinted)(?:\s+on)?\s*[:：-]?\s*({_DATE_TOKEN})",
+            "article_header_english_republished_date",
+            "republished",
+        ),
+        (
+            rf"(?im)^\s*(?:Translation\s+published|Translated)(?:\s+on)?\s*[:：-]?\s*({_DATE_TOKEN})",
+            "article_header_english_translation_published_date",
+            "translated_published",
+        ),
+        (
+            rf"(?im)^\s*(?:Published|Posted)(?:\s+on)?\s*[:：-]?\s*({_DATE_TOKEN})",
             "article_header_english_published_date",
             "published",
         ),
         (
-            r"(?:Created)(?:\s+in|\s+on)?\s*[:：-]?\s*"
-            r"([A-Z][a-z]+\s+\d{1,2},\s+(?:19|20)\d{2}|(?:19|20)\d{2}-\d{1,2}-\d{1,2})",
+            rf"(?im)^\s*Created(?:\s+in|\s+on)?\s*[:：-]?\s*({_DATE_TOKEN})",
             "article_header_english_created_date",
             "created",
         ),
         (
-            r"(?:Last\s+updated|Updated)(?:\s+on)?\s*[:：-]?\s*"
-            r"([A-Z][a-z]+\s+\d{1,2},\s+(?:19|20)\d{2}|(?:19|20)\d{2}-\d{1,2}-\d{1,2})",
+            rf"(?im)^\s*(?:Last\s+updated|Updated)(?:\s+on)?\s*[:：-]?\s*({_DATE_TOKEN})",
             "article_header_english_updated_date",
             "updated",
         ),
     )
     found: list[tuple[int, str, str, str, str]] = []
     for pattern, source, semantic in patterns:
-        for match in re.finditer(pattern, sample, flags=re.IGNORECASE):
+        for match in re.finditer(pattern, sample):
             found.append(
                 (
                     match.start(),
@@ -521,7 +559,8 @@ def _conflict_values(
         if item.normalized
         and item.semantic == selected.semantic
         and item.confidence >= 0.72
-        and _PROVENANCE_RANK.get(item.provenance, 0) >= _PROVENANCE_RANK["acquisition_metadata"]
+        and _PROVENANCE_RANK.get(item.provenance, 0)
+        >= _PROVENANCE_RANK["acquisition_metadata"]
     ]
     if selected.article_local:
         local_values = {item.normalized for item in comparable if item.article_local}
@@ -558,11 +597,18 @@ def _profile(
             selected is not None
             and candidate.normalized
             and candidate.normalized == selected.normalized
+            and candidate.semantic not in _CONTEXT_ONLY_SEMANTICS
         ):
             relation = "supports"
-        elif candidate.normalized in conflicts and candidate.semantic == (selected.semantic if selected else ""):
+        elif (
+            candidate.normalized in conflicts
+            and candidate.semantic == (selected.semantic if selected else "")
+        ):
             relation = "conflicts"
-        elif candidate.semantic in _CONTEXT_ONLY_SEMANTICS or candidate.provenance == "url_path":
+        elif (
+            candidate.semantic in _CONTEXT_ONLY_SEMANTICS
+            or candidate.provenance == "url_path"
+        ):
             relation = "contextual"
         else:
             relation = "alternative"
@@ -603,23 +649,37 @@ def _profile_evidence(
     )
 
 
-def _url_path_date(url: str) -> str:
+def _url_path_date(url: str) -> tuple[str, str, str]:
     path = urlsplit(text(url)).path
     for pattern in (
         r"/((?:19|20)\d{2})-(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])(?:/|$)",
         r"/((?:19|20)\d{2})/(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])(?:/|$)",
+        r"/((?:19|20)\d{2})/(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])(?:/|$)",
         r"(?:/|[_-])((?:19|20)\d{2})(0[1-9]|1[0-2])([0-3]\d)(?:[_./-]|$)",
     ):
         match = re.search(pattern, path)
         if not match:
             continue
         try:
-            return datetime(
+            value = datetime(
                 int(match.group(1)), int(match.group(2)), int(match.group(3))
             ).date().isoformat()
+            return value, "url_path_date", match.group(0)
         except ValueError:
             continue
-    return ""
+
+    unix_match = re.search(
+        r"/(?:detail|article)/(1[0-9]{9})(?:\d+)?(?:\.s?html?)?(?:/|$)",
+        path,
+    )
+    if unix_match:
+        try:
+            parsed = datetime.fromtimestamp(int(unix_match.group(1)), timezone.utc).astimezone(_BJT)
+        except (OverflowError, OSError, ValueError):
+            parsed = None
+        if parsed is not None and 2000 <= parsed.year <= 2100:
+            return parsed.date().isoformat(), "url_unix_timestamp", unix_match.group(1)
+    return "", "", ""
 
 
 __all__ = [
