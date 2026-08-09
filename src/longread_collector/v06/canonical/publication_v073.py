@@ -393,39 +393,44 @@ def _extract_article_local_dates(
     title: str,
 ) -> tuple[tuple[str, str, str, str], ...]:
     sample = _article_start(body, title)[:7000]
+    # Chinese publisher headers often place several labeled date facts on one
+    # physical line (for example "印发日期 ... 发布日期 ..."). Specific labels
+    # are therefore deliberately unanchored so every role survives into the
+    # evidence profile. English generic labels remain line-anchored below to
+    # prevent "Published" from re-matching "Originally/Republished".
     patterns: tuple[tuple[str, str, str], ...] = (
         (
-            rf"(?m)^\s*(?:印发日期|印發日期)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
+            rf"(?:印发日期|印發日期)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
             "article_header_issued_date",
             "issued",
         ),
         (
-            rf"(?m)^\s*(?:更新时间|更新時間|更新日期|最后更新|最後更新)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
+            rf"(?:更新时间|更新時間|更新日期|最后更新|最後更新)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
             "article_header_updated_date",
             "updated",
         ),
         (
-            rf"(?m)^\s*(?:首次发表|首次發表|首次发布|首次發布|首发日期|首發日期)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
+            rf"(?:首次发表|首次發表|首次发布|首次發布|首发日期|首發日期)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
             "article_header_original_published_date",
             "original_published",
         ),
         (
-            rf"(?m)^\s*(?:转载日期|轉載日期|重刊日期|再版日期)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
+            rf"(?:转载日期|轉載日期|重刊日期|再版日期)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
             "article_header_republished_date",
             "republished",
         ),
         (
-            rf"(?m)^\s*(?:翻译日期|翻譯日期|译文发布日期|譯文發布日期)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
+            rf"(?:翻译日期|翻譯日期|译文发布日期|譯文發布日期)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
             "article_header_translation_published_date",
             "translated_published",
         ),
         (
-            rf"(?m)^\s*(?:发布时间|發布時間|(?<!译文)(?<!譯文)发布日期|(?<!譯文)發布日期|文章日期|出版时间|出版時間|来源日期|來源日期)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
+            rf"(?<!译文)(?<!譯文)(?:发布时间|發布時間|发布日期|發布日期|文章日期|出版时间|出版時間|来源日期|來源日期)\s*[：:]?\s*({_ZH_DATE_TOKEN})",
             "article_header_labeled_date",
             "published",
         ),
         (
-            rf"(?m)^\s*日期\s*[：:]?\s*({_ZH_DATE_TOKEN})",
+            rf"(?<![\w\u4e00-\u9fff])日期\s*[：:]?\s*({_ZH_DATE_TOKEN})",
             "article_header_generic_date",
             "published",
         ),
