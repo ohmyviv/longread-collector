@@ -117,6 +117,100 @@ def test_updated_date_is_context_not_a_conflict_with_published_date() -> None:
     assert updated["relation"] == "contextual"
 
 
+def test_republication_date_alone_does_not_reset_original_freshness() -> None:
+    title = "Republished archive story"
+    record = _record("republished-only", title=title)
+    bundle = _bundle(
+        record.item_id,
+        title=title,
+        body=(
+            f"# {title}\n"
+            "Republished on August 9, 2026\n"
+            "This archive story has no recoverable original publication date."
+        ),
+    )
+    result = CanonicalArticleResolver().canonicalize(_context(), record, bundle)
+
+    assert result.published_at == ""
+    assert result.freshness_facts["publication_evidence_status"] == "non_publication_only"
+    profile = result.freshness_facts["publication_evidence_profile"]
+    republished = next(row for row in profile if row["semantic"] == "republished")
+    assert republished["normalized"] == "2026-08-09"
+    assert republished["relation"] == "contextual"
+
+
+def test_original_and_republication_dates_remain_distinct() -> None:
+    title = "Republished with original date"
+    record = _record("original-and-republished", title=title)
+    bundle = _bundle(
+        record.item_id,
+        title=title,
+        body=(
+            f"# {title}\n"
+            "Originally published on July 2, 2026\n"
+            "Republished on August 9, 2026\n"
+            "The full original article follows."
+        ),
+    )
+    result = CanonicalArticleResolver().canonicalize(_context(), record, bundle)
+
+    assert result.published_at == "2026-07-02"
+    assert result.freshness_facts["publication_conflict"] is False
+    profile = result.freshness_facts["publication_evidence_profile"]
+    original = next(row for row in profile if row["semantic"] == "original_published")
+    republished = next(row for row in profile if row["semantic"] == "republished")
+    assert original["relation"] == "selected"
+    assert republished["relation"] == "contextual"
+
+
+def test_translation_date_is_preserved_as_context_not_initial_publication() -> None:
+    title = "Translated longread"
+    record = _record("translation-date-only", title=title)
+    bundle = _bundle(
+        record.item_id,
+        title=title,
+        body=(
+            f"# {title}\n"
+            "Translation published on August 9, 2026\n"
+            "The original publication date is not stated."
+        ),
+    )
+    result = CanonicalArticleResolver().canonicalize(_context(), record, bundle)
+
+    assert result.published_at == ""
+    profile = result.freshness_facts["publication_evidence_profile"]
+    translation = next(row for row in profile if row["semantic"] == "translated_published")
+    assert translation["normalized"] == "2026-08-09"
+    assert translation["relation"] == "contextual"
+
+
+def test_article_header_publication_beats_weaker_page_original_metadata() -> None:
+    title = "Local publication wins"
+    record = _record(
+        "local-over-original-metadata",
+        title=title,
+        metadata={
+            "freshness": {
+                "published_at_resolved": "2024-02-03",
+                "published_at_source": "Originally published page metadata",
+                "published_at_confidence": "high",
+            }
+        },
+    )
+    bundle = _bundle(
+        record.item_id,
+        title=title,
+        body=f"# {title}\nPublished on August 8, 2026\nCurrent article body.",
+    )
+    result = CanonicalArticleResolver().canonicalize(_context(), record, bundle)
+
+    assert result.published_at == "2026-08-08"
+    profile = result.freshness_facts["publication_evidence_profile"]
+    selected = next(row for row in profile if row["relation"] == "selected")
+    assert selected["provenance"] == "article_header"
+    assert selected["semantic"] == "published"
+
+
 def test_same_semantic_article_local_conflict_remains_explicit() -> None:
     title = "Conflicting publication dates"
     record = _record(
