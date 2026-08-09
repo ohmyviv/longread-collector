@@ -183,27 +183,41 @@ def test_quality_fill_can_exceed_sixteen_native_after_open_floor() -> None:
 
 
 def test_investigations_outrank_generic_items_within_source_cap() -> None:
-    titles = [
-        "Daily company appointment update",
-        "Short transport price update",
-        "起底防晒衣：实测四件全部翻车",
-        "暗访酸臭原料灰色产业链",
-        "观势：消费动能怎么上坡",
-        "核电审批节奏背后的产业变化",
-    ]
-    discovered = [native("curated", index) for index in range(1, 7)]
-    for item, title in zip(discovered, titles, strict=True):
-        item.url = f"https://curated.example.com/2026/08/01/article-{item.rank}.html"
-        item.title = title
-        item.description = ""
-    accepted, _ = filter_discovered(discovered, max_urls=4, max_per_domain=2)
-    accepted_titles = {item.title for item in accepted}
-    assert accepted_titles == set(titles[2:])
-    assert all(
-        item.metadata["selection"]["score_components"]["editorial_priority"]
-        > 0
-        for item in accepted
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from longread_collector.freshness_policy_v056 import (
+        begin_freshness_clock,
+        end_freshness_clock,
     )
+
+    token = begin_freshness_clock(
+        datetime(2026, 8, 2, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+    try:
+        titles = [
+            "Daily company appointment update",
+            "Short transport price update",
+            "起底防晒衣：实测四件全部翻车",
+            "暗访酸臭原料灰色产业链",
+            "观势：消费动能怎么上坡",
+            "核电审批节奏背后的产业变化",
+        ]
+        discovered = [native("curated", index) for index in range(1, 7)]
+        for item, title in zip(discovered, titles, strict=True):
+            item.url = f"https://curated.example.com/2026/08/01/article-{item.rank}.html"
+            item.title = title
+            item.description = ""
+        accepted, _ = filter_discovered(discovered, max_urls=4, max_per_domain=2)
+        accepted_titles = {item.title for item in accepted}
+        assert accepted_titles == set(titles[2:])
+        assert all(
+            item.metadata["selection"]["score_components"]["editorial_priority"]
+            > 0
+            for item in accepted
+        )
+    finally:
+        end_freshness_clock(token)
 
 
 def test_capacity_reserve_is_not_snapshot_page_rejection() -> None:
