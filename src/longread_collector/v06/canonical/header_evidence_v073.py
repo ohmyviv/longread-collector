@@ -24,6 +24,7 @@ _ZH_SOURCE_TIMESTAMP_RE = re.compile(
     re.I,
 )
 _LEGACY_URL_DATE_SOURCE_RE = re.compile(r"(?:^|_)(?:url|urlpath|url_path)(?:_|$)", re.I)
+_DEMOTED_URL_PUBLICATION_VALUE_KEY = "_pr73_demoted_url_publication_value"
 
 
 def enrich_header_publication_evidence(
@@ -35,8 +36,10 @@ def enrich_header_publication_evidence(
     PR-7.3 reads the underlying evidence again instead of trusting a legacy
     aggregate blindly. A legacy `published_at_resolved` whose own source says it
     came from the URL path is therefore removed from the selectable metadata
-    surface. The URL itself remains available to `publication_v073`, where URL
-    dates are recorded as contextual-only evidence.
+    surface. The original aggregate value is retained under a PR-7.3-private
+    marker so the L4 service can also remove adapter projections of the same
+    fact from discovery/acquisition hints. The URL itself remains available to
+    `publication_v073`, where URL dates are recorded as contextual-only evidence.
     """
 
     metadata = dict(record.raw_metadata)
@@ -47,7 +50,9 @@ def enrich_header_publication_evidence(
     publication_url = record.url
     legacy_source = normalize_space(freshness.get("published_at_source")).lower()
     if legacy_source and _LEGACY_URL_DATE_SOURCE_RE.search(legacy_source):
-        if freshness.get("published_at_resolved"):
+        legacy_resolved = normalize_space(freshness.get("published_at_resolved"))
+        if legacy_resolved:
+            freshness[_DEMOTED_URL_PUBLICATION_VALUE_KEY] = legacy_resolved
             freshness["published_at_resolved"] = ""
             freshness["published_at_confidence"] = "unknown"
             changed = True
@@ -76,6 +81,15 @@ def enrich_header_publication_evidence(
 
     metadata["freshness"] = freshness
     return replace(record, raw_metadata=metadata, url=publication_url)
+
+
+def demoted_url_publication_value(record: DiscoveryRecord) -> str:
+    """Return the legacy URL-derived aggregate retained for projection cleanup."""
+
+    freshness = record.raw_metadata.get("freshness")
+    if not isinstance(freshness, Mapping):
+        return ""
+    return normalize_space(freshness.get(_DEMOTED_URL_PUBLICATION_VALUE_KEY))
 
 
 def _article_header_sample(body: str, title: str) -> str:
@@ -107,4 +121,8 @@ def _normalize_legacy_date_url(url: str) -> str:
     return value
 
 
-__all__ = ["HEADER_EVIDENCE_VERSION", "enrich_header_publication_evidence"]
+__all__ = [
+    "HEADER_EVIDENCE_VERSION",
+    "demoted_url_publication_value",
+    "enrich_header_publication_evidence",
+]
