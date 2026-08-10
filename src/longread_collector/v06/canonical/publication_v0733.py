@@ -10,8 +10,10 @@ label on the same line, for example::
 PR-7.3.2 intentionally required a standalone datetime to begin its own line so
 that the old broad body-date scan could not reintroduce Related-card false
 positives. This wrapper keeps that guard and adds one equally narrow cue: an
-absolute date/datetime inside a tight title-local byline/metadata line that also
-contains a byline separator, a view/read marker and an explicit source label.
+absolute local date/datetime inside a tight title-local byline/metadata line that
+also contains a byline separator, a view/read marker and an explicit source
+label. Timezone-bearing timestamps are deliberately left to the established
+BJT-aware normalizer rather than interpreted by this local calendar cue.
 """
 
 from __future__ import annotations
@@ -33,9 +35,10 @@ _ABSOLUTE_DATETIME_RE = re.compile(
     r"[-/.](?P<month_numeric>\d{1,2})[-/.](?P<day_numeric>\d{1,2})|"
     r"年(?P<month_zh>\d{1,2})月(?P<day_zh>\d{1,2})(?:日)?"
     r")"
-    r"(?:[ T]\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:Z|[+-]\d{2}:?\d{2}))?)?)",
+    r"(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?)",
     re.I,
 )
+_TIMEZONE_SUFFIX_RE = re.compile(r"^\s*(?:Z|[+-]\d{2}:?\d{2})\b", re.I)
 _SOURCE_MARKER_RE = re.compile(r"(?:来源|來源)\s*[：:]", re.I)
 _READ_MARKER_RE = re.compile(r"(?:浏览|瀏覽|阅读|閱讀)", re.I)
 
@@ -72,6 +75,11 @@ def _title_local_byline_candidate(record, bundle: AcquisitionBundle) -> Evidence
         match = _ABSOLUTE_DATETIME_RE.search(compact)
         if match is None:
             continue
+        # This narrow cue interprets a local calendar date only. If the observed
+        # timestamp carries an explicit timezone, do not truncate it to the
+        # lexical date; the established publication normalizer owns BJT rollover.
+        if _TIMEZONE_SUFFIX_RE.match(compact[match.end() : match.end() + 10]):
+            continue
 
         prefix = compact[: match.start()]
         # Require a real byline/metadata cue before the date rather than merely
@@ -91,8 +99,8 @@ def _title_local_byline_candidate(record, bundle: AcquisitionBundle) -> Evidence
             field="publication_date_candidate",
             value={
                 # L4's canonical publication contract is date-only. Preserve
-                # the exact observed datetime in ``raw`` while passing a valid
-                # ISO date into the established PR-7.3.1 evidence machinery.
+                # the exact observed local datetime in ``raw`` while passing a
+                # valid ISO date into the established PR-7.3.1 machinery.
                 "value": normalized,
                 "source": _SOURCE,
                 "confidence": 0.97,
