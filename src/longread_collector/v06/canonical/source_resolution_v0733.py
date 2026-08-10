@@ -4,7 +4,7 @@ The first scheduled natural shadow after PR-7.3.2 exposed a narrow false
 ``secondary_republish`` class on publisher-hosted reporter pages. The acquired
 Jiemian pages carried all of the following title-local evidence:
 
-* an on-site author/byline link;
+* an on-site author/byline link on a sibling subdomain;
 * an absolute publication datetime;
 * ``浏览`` / ``阅读`` metadata;
 * ``来源：<publisher>``; and
@@ -14,8 +14,9 @@ The older PR-2-compatible resolver can still treat a machine hosting label/domai
 as different from the human publisher label and preserve ``secondary_republish``
 with ``retain_current_display_url``. This wrapper does not add a site allow-list.
 It recovers ``original`` only when the title-local self-source label agrees with
-the page's own title brand and no stronger external-original, wire, translation,
-or primary-document action has already been established.
+the page's own title brand, the byline links to a sibling/parent-subdomain profile
+on the same site, and no stronger external-original, wire, translation, or
+primary-document action has already been established.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from ..contracts import (
     SourceAction,
     SourceRelationship,
 )
-from .evidence import make_evidence, normalize_space
+from .evidence import host, make_evidence, normalize_space
 from . import source_resolution_v0732 as _base
 
 SOURCE_VERSION = "canonical-source-v0.6-pr7.3.3"
@@ -45,6 +46,10 @@ _DATE_RE = re.compile(
     re.I,
 )
 _READ_MARKER_RE = re.compile(r"(?:浏览|瀏覽|阅读|閱讀)", re.I)
+_BYLINE_LINK_RE = re.compile(
+    r"\[[^\]\n]{1,120}\]\((?P<url>https?://[^)\s]+)\)",
+    re.I,
+)
 
 
 def resolve_source(
@@ -101,7 +106,7 @@ def resolve_source(
             SourceRelationship.ORIGINAL.value,
             confidence=confidence,
             excerpt=(
-                "reason=title_local_self_source_matches_title_brand; "
+                "reason=title_local_self_source_with_same_site_byline_profile; "
                 f"hosting={base.hosting_source}; publisher={publisher}; "
                 f"action={SourceAction.NONE.value}"
             ),
@@ -144,12 +149,51 @@ def _title_local_self_source(
         prefix = compact[: date_match.start()] if date_match is not None else ""
         if not any(marker in prefix for marker in ("·", "•", "](", "作者", "记者", "記者")):
             continue
+        if not _has_same_site_byline_profile(record.url, prefix):
+            continue
 
         publisher = normalize_space(match.group("publisher")).strip(" ：:|｜")[:80]
         if publisher and _publisher_matches_title_brand(title, publisher):
             return publisher, compact
 
     return "", ""
+
+
+def _has_same_site_byline_profile(page_url: str, prefix: str) -> bool:
+    """Require machine-checkable same-site evidence, not branding alone.
+
+    The natural Jiemian shape links the byline to ``a.jiemian.com`` while the
+    article is hosted on ``www.jiemian.com``. Requiring a sibling/parent-subdomain
+    link keeps the recovery narrow and prevents a same-host aggregator editor
+    profile plus a copied external publisher label from being treated as proof
+    of original publication.
+    """
+
+    page_host = host(page_url)
+    if not page_host:
+        return False
+
+    for match in _BYLINE_LINK_RE.finditer(prefix):
+        profile_host = host(match.group("url"))
+        if (
+            profile_host
+            and profile_host != page_host
+            and _same_site(page_host, profile_host)
+        ):
+            return True
+    return False
+
+
+def _same_site(left: str, right: str) -> bool:
+    return bool(
+        left
+        and right
+        and (
+            left == right
+            or left.endswith("." + right)
+            or right.endswith("." + left)
+        )
+    )
 
 
 def _publisher_matches_title_brand(title: str, publisher: str) -> bool:
