@@ -112,7 +112,6 @@ def test_cen_related_card_standalone_date_no_longer_overrides_page_metadata() ->
         body_text=body,
         body_markdown=body,
         raw_title=title,
-        # v0.5.6m top-level date was overwritten by the bad Related-card hit.
         raw_dates=("2025-08-07T00:00:00+08:00",),
         content_length=len(body),
         prose_length=len(body),
@@ -303,12 +302,9 @@ def test_legacy_bridge_and_shared_acquisition_preserve_structured_date_evidence(
     ]
 
 
-def test_pr731_versions_are_explicit_without_touching_l5() -> None:
-    # Importing the legacy runtime pipeline mutates frozen compatibility module
-    # globals by design. Keep this import inside the test so collection does not
-    # perturb unrelated legacy tests that run earlier in the suite.
+def test_pr732_versions_are_explicit_without_touching_l5() -> None:
     from longread_collector.v06.shadow.pipeline import PARALLEL_SHADOW_PIPELINE_VERSION
 
-    assert PUBLICATION_VERSION == "canonical-publication-v0.6-pr7.3.1"
-    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.1"
-    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.1"
+    assert PUBLICATION_VERSION == "canonical-publication-v0.6-pr7.3.2"
+    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.2"
+    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.2"
