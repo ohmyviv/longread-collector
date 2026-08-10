@@ -65,7 +65,7 @@ def resolve_source(
         SourceRelationship.TRANSLATED_REPUBLISH,
         SourceRelationship.WIRE_REPUBLISH,
     }:
-        return base
+        return replace(base, evidence=_retag_version(base.evidence))
 
     publisher, original_url, excerpt, cue_type = _explicit_original_source(
         record,
@@ -83,7 +83,9 @@ def resolve_source(
     confidence = max(base.confidence, 0.98)
 
     evidence = [
-        item for item in base.evidence if item.evidence_type != "source_relationship"
+        item
+        for item in _retag_version(base.evidence)
+        if item.evidence_type != "source_relationship"
     ]
     evidence.append(
         make_evidence(
@@ -160,9 +162,14 @@ def _title_local_sample(body: str, title: str) -> str:
     value = body or ""
     clean_title = normalize_space(title)
     if clean_title:
-        position = value.find(clean_title)
-        if 0 <= position <= 12000:
-            return value[position : position + 1800]
+        needles = [clean_title]
+        for width in (64, 48, 36, 24, 16):
+            if len(clean_title) > width:
+                needles.append(clean_title[:width])
+        for needle in needles:
+            position = value.find(needle)
+            if 0 <= position <= 12000:
+                return value[position : position + 1800]
     return value[:1800]
 
 
@@ -173,9 +180,12 @@ def _excerpt(value: str, match: re.Match[str], limit: int = 260) -> str:
 
 
 def _retag_version(evidence: tuple) -> tuple:
-    # No semantic change: leave PR-7.3 evidence untouched when no new cue is
-    # present. This helper keeps the no-op branch explicit and type-stable.
-    return tuple(evidence)
+    return tuple(
+        replace(item, extractor=SOURCE_VERSION)
+        if item.extractor.startswith("canonical-source-")
+        else item
+        for item in evidence
+    )
 
 
 __all__ = ["SOURCE_VERSION", "SourceResolution", "resolve_source"]
