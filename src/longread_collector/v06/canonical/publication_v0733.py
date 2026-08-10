@@ -17,6 +17,7 @@ contains a byline separator, a view/read marker and an explicit source label.
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import date
 import re
 
 from ..contracts import AcquisitionBundle, Evidence, StageName
@@ -28,9 +29,9 @@ PublicationResolution = _base.PublicationResolution
 _SOURCE = "body_header_byline_datetime"
 
 _ABSOLUTE_DATETIME_RE = re.compile(
-    r"(?P<value>(?:19|20)\d{2}(?:"
-    r"[-/.]\d{1,2}[-/.]\d{1,2}|"
-    r"年\d{1,2}月\d{1,2}(?:日)?"
+    r"(?P<value>(?P<year>(?:19|20)\d{2})(?:"
+    r"[-/.](?P<month_numeric>\d{1,2})[-/.](?P<day_numeric>\d{1,2})|"
+    r"年(?P<month_zh>\d{1,2})月(?P<day_zh>\d{1,2})(?:日)?"
     r")"
     r"(?:[ T]\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:Z|[+-]\d{2}:?\d{2}))?)?)",
     re.I,
@@ -79,7 +80,7 @@ def _title_local_byline_candidate(record, bundle: AcquisitionBundle) -> Evidence
             continue
 
         raw = normalize_space(match.group("value"))
-        normalized = _base.normalize_publication_date(raw)
+        normalized = _calendar_date(match)
         if not normalized:
             continue
 
@@ -89,7 +90,10 @@ def _title_local_byline_candidate(record, bundle: AcquisitionBundle) -> Evidence
             source_stage=StageName.CANONICAL,
             field="publication_date_candidate",
             value={
-                "value": raw,
+                # L4's canonical publication contract is date-only. Preserve
+                # the exact observed datetime in ``raw`` while passing a valid
+                # ISO date into the established PR-7.3.1 evidence machinery.
+                "value": normalized,
                 "source": _SOURCE,
                 "confidence": 0.97,
                 "raw": raw,
@@ -102,6 +106,15 @@ def _title_local_byline_candidate(record, bundle: AcquisitionBundle) -> Evidence
         )
 
     return None
+
+
+def _calendar_date(match: re.Match[str]) -> str:
+    month = match.group("month_numeric") or match.group("month_zh")
+    day = match.group("day_numeric") or match.group("day_zh")
+    try:
+        return date(int(match.group("year")), int(month), int(day)).isoformat()
+    except (TypeError, ValueError):
+        return ""
 
 
 normalize_publication_date = _base.normalize_publication_date
