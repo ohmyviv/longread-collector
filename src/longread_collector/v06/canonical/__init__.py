@@ -2,9 +2,9 @@
 
 from .genre import GENRE_VERSION, resolve_genre
 from .medium import MEDIUM_VERSION, MediumResolution, resolve_medium
-from .publication_v0732 import PUBLICATION_VERSION, PublicationResolution, resolve_publication
-from .service_v0732 import CANONICAL_SERVICE_VERSION, CanonicalArticleResolver
-from .source_resolution_v0732 import SOURCE_VERSION, SourceResolution, resolve_source
+from .publication_v0733 import PUBLICATION_VERSION, PublicationResolution, resolve_publication
+from .service_v0733 import CANONICAL_SERVICE_VERSION, CanonicalArticleResolver
+from .source_resolution_v0733 import SOURCE_VERSION, SourceResolution, resolve_source
 
 __all__ = [
     "CANONICAL_SERVICE_VERSION",
