@@ -213,4 +213,4 @@ def test_pr732_versions_are_l4_only_and_keep_pr72_editorial_frozen() -> None:
     assert PUBLICATION_VERSION == "canonical-publication-v0.6-pr7.3.2"
     assert SOURCE_VERSION == "canonical-source-v0.6-pr7.3.2"
     assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.2"
-    assert EDITORIAL_JUDGE_VERSION == "editorial-judge-v0.6-pr7.3.2" if False else "editorial-judge-v0.6-pr7.2"
+    assert EDITORIAL_JUDGE_VERSION == "editorial-judge-v0.6-pr7.2"
