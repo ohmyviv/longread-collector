@@ -18,7 +18,7 @@ from ..contracts import RunContext
 from .comparison import PARALLEL_SHADOW_VERSION
 from .runner import FullParallelShadowRunner
 
-PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.2"
+PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.3"
 LEGACY_CONTROL_VERSION = "collector-v0.5.6m"
 
 
