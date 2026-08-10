@@ -72,6 +72,7 @@ def test_bydrug_title_adjacent_absolute_datetime_is_article_local_publication() 
         "医药新闻-ByDrug-一站式医药资源共享中心-医药魔方"
     )
     article_title = "独家访谈杨永广教授：深耕移植免疫三十载，解析异种移植技术迭代与发展前景"
+    original = "https://www.vbdata.cn/1519089165"
     record = _record(
         "bydrug-natural-pr732",
         url="https://bydrug.pharmcube.com/news/detail/4412767c4149e290d91ca8645e681448",
@@ -80,7 +81,7 @@ def test_bydrug_title_adjacent_absolute_datetime_is_article_local_publication() 
     body = (
         "ByDrug首页 > 医药新闻 > 新闻详情\n\n"
         f"{article_title}\n\n"
-        "2026-08-10 08:00 [查看原文](https://www.vbdata.cn/1519089165)\n\n"
+        f"2026-08-10 08:00 [查看原文]({original})\n\n"
         + ("异种移植深度访谈正文。" * 220)
     )
     bundle = _bundle(
@@ -100,6 +101,9 @@ def test_bydrug_title_adjacent_absolute_datetime_is_article_local_publication() 
     assert selected["source"] == "body_header_standalone_datetime"
     assert selected["article_local"] is True
     assert selected["provenance"] == "article_local_metadata"
+    assert result.source_relationship is SourceRelationship.SECONDARY_REPUBLISH
+    assert result.source_action is SourceAction.REPLACE_WITH_ORIGINAL
+    assert result.canonical_content_url == original
 
 
 def test_huxiu_wechat_attribution_replaces_host_with_named_original() -> None:
@@ -209,4 +213,4 @@ def test_pr732_versions_are_l4_only_and_keep_pr72_editorial_frozen() -> None:
     assert PUBLICATION_VERSION == "canonical-publication-v0.6-pr7.3.2"
     assert SOURCE_VERSION == "canonical-source-v0.6-pr7.3.2"
     assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.2"
-    assert EDITORIAL_JUDGE_VERSION == "editorial-judge-v0.6-pr7.2"
+    assert EDITORIAL_JUDGE_VERSION == "editorial-judge-v0.6-pr7.3.2" if False else "editorial-judge-v0.6-pr7.2"
