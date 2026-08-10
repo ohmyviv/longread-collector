@@ -68,7 +68,7 @@ def _title_local_candidate(record, bundle: AcquisitionBundle) -> Evidence | None
     return Evidence(
         evidence_id=f"{record.item_id}-pr732-title-local-publication",
         evidence_type="legacy_publication_date_candidate",
-        source_stage=StageName.ACQUISITION,
+        source_stage=StageName.CANONICAL,
         field="publication_date_candidate",
         value={
             "value": raw,
