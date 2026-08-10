@@ -124,8 +124,8 @@ def test_jiemian_slash_byline_datetime_resolves_same_template() -> None:
     assert result.canonical_source == "界面新闻"
 
 
-def test_title_local_external_source_label_does_not_become_self_original() -> None:
-    title = "Aggregator report|Aggregator News"
+def test_external_source_matching_title_brand_without_sibling_profile_stays_secondary() -> None:
+    title = "Aggregator report|新华社"
     url = "https://aggregator.example/article/1"
     record = _record("external-source-negative-pr733", url=url, title=title)
     body = (
@@ -143,6 +143,36 @@ def test_title_local_external_source_label_does_not_become_self_original() -> No
     assert result.source_relationship is SourceRelationship.SECONDARY_REPUBLISH
     assert result.source_action is SourceAction.RETAIN_CURRENT_DISPLAY_URL
     assert result.canonical_source == "新华社"
+    assert not any(
+        item.evidence_type == "self_source_title_metadata" for item in result.evidence
+    )
+
+
+def test_timezone_bearing_byline_datetime_is_not_lexically_promoted() -> None:
+    title = "Timezone-bearing byline|Example Publisher"
+    url = "https://example.test/article/2"
+    record = _record("timezone-byline-negative-pr733", url=url, title=title)
+    body = (
+        "# Timezone-bearing byline\n\n"
+        "[Author](https://a.example.test/authors/1) · "
+        "2026-08-10 17:30Z 浏览 1w 来源：Example Publisher\n\n"
+        + ("Independent article body. " * 180)
+    )
+
+    result = CanonicalArticleResolver().canonicalize(
+        _context(), record, _bundle(record.item_id, title=title, body=body)
+    )
+
+    # 17:30Z is already 2026-08-11 in Beijing. PR-7.3.3 must not truncate the
+    # lexical date to 2026-08-10; a BJT-aware upstream candidate may resolve it
+    # to 2026-08-11, otherwise conservative unknown is acceptable.
+    assert result.published_at != "2026-08-10"
+    assert not any(
+        item.evidence_type == "legacy_publication_date_candidate"
+        and isinstance(item.value, dict)
+        and item.value.get("source") == "body_header_byline_datetime"
+        for item in result.evidence
+    )
 
 
 def test_distant_byline_metadata_does_not_reopen_body_wide_date_scan() -> None:
@@ -152,7 +182,7 @@ def test_distant_byline_metadata_does_not_reopen_body_wide_date_scan() -> None:
     body = (
         "# Independent analysis\n\n"
         + ("Independent long-form analysis paragraph. " * 180)
-        + "\n\n[Author](https://example.test/authors/1) · "
+        + "\n\n[Author](https://a.example.test/authors/1) · "
         "2026年08月10日 10:00 浏览 1w 来源：Example Publisher\n"
     )
 
