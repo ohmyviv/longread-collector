@@ -22,6 +22,10 @@ from longread_collector.v06.shadow.snapshot_persistence_v0735 import (
 )
 
 
+def _utf16_units(value: str) -> int:
+    return len(value.encode("utf-16-le")) // 2
+
+
 class _FakeWorksheet:
     def __init__(self, title: str, *, fail_append: bool = False) -> None:
         self.title = title
@@ -137,6 +141,7 @@ def test_oversized_metadata_is_losslessly_chunked_with_manifest_and_hash() -> No
     assert manifest["version"] == SNAPSHOT_PERSISTENCE_VERSION
     assert manifest["sheet"] == SNAPSHOT_OVERFLOW_SHEET
     assert manifest["chars"] == len(expected)
+    assert manifest["utf16_units"] == _utf16_units(expected)
     assert manifest["sha256"] == hashlib.sha256(expected.encode("utf-8")).hexdigest()
 
     overflow = store.book.sheets[SNAPSHOT_OVERFLOW_SHEET]
@@ -144,11 +149,38 @@ def test_oversized_metadata_is_losslessly_chunked_with_manifest_and_hash() -> No
     chunks = sorted(overflow.rows[1:], key=lambda row: int(row[4]))
     assert len(chunks) == manifest["chunks"]
     assert all(len(str(row[6])) <= SNAPSHOT_METADATA_CHUNK_SIZE for row in chunks)
+    assert all(_utf16_units(str(row[6])) <= 40_000 for row in chunks)
     reconstructed = "".join(str(row[6]) for row in chunks)
     assert reconstructed == expected
     assert hashlib.sha256(reconstructed.encode("utf-8")).hexdigest() == manifest["sha256"]
     assert all(str(row[0]) == manifest["snapshot_id"] for row in chunks)
     assert all(str(row[1]) == "COL-SNAPSHOT-OVERFLOW" for row in chunks)
+
+
+def test_astral_unicode_overflows_on_utf16_units_before_python_length_limit() -> None:
+    metadata = {"emoji_payload": "😀" * 30_000}
+    expected = json.dumps(metadata, ensure_ascii=False, separators=(",", ":"))
+    assert len(expected) < SNAPSHOT_METADATA_INLINE_LIMIT
+    assert _utf16_units(expected) > SNAPSHOT_METADATA_INLINE_LIMIT
+
+    store = _FakeStore()
+    hardened_append_snapshot_rows(
+        store,
+        run_id="COL-SNAPSHOT-EMOJI",
+        pair_list=[],
+        state=_state(metadata),
+    )
+
+    main = store.book.sheets["collector_discovery_snapshot"]
+    metadata_index = SNAPSHOT_HEADERS.index("metadata_json")
+    manifest = json.loads(str(main.rows[1][metadata_index]))[
+        "_snapshot_metadata_overflow"
+    ]
+    assert manifest["utf16_units"] == _utf16_units(expected)
+    overflow = store.book.sheets[SNAPSHOT_OVERFLOW_SHEET]
+    chunks = sorted(overflow.rows[1:], key=lambda row: int(row[4]))
+    assert "".join(str(row[6]) for row in chunks) == expected
+    assert all(_utf16_units(str(row[6])) <= 40_000 for row in chunks)
 
 
 def test_overflow_write_failure_propagates_and_main_snapshot_is_not_claimed() -> None:
