@@ -50,9 +50,15 @@ class _FakeWorksheet:
 
 
 class _FakeBook:
-    def __init__(self, *, fail_overflow: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail_overflow: bool = False,
+        fail_main: bool = False,
+    ) -> None:
         self.sheets: dict[str, _FakeWorksheet] = {}
         self.fail_overflow = fail_overflow
+        self.fail_main = fail_main
 
     def worksheet(self, title: str):
         if title not in self.sheets:
@@ -62,16 +68,27 @@ class _FakeBook:
     def add_worksheet(self, *, title: str, rows: int, cols: int):
         ws = _FakeWorksheet(
             title,
-            fail_append=(self.fail_overflow and title == SNAPSHOT_OVERFLOW_SHEET),
+            fail_append=(
+                (self.fail_overflow and title == SNAPSHOT_OVERFLOW_SHEET)
+                or (self.fail_main and title == "collector_discovery_snapshot")
+            ),
         )
         self.sheets[title] = ws
         return ws
 
 
 class _FakeStore:
-    def __init__(self, *, fail_overflow: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail_overflow: bool = False,
+        fail_main: bool = False,
+    ) -> None:
         self.settings = SimpleNamespace(timezone="Asia/Shanghai")
-        self.book = _FakeBook(fail_overflow=fail_overflow)
+        self.book = _FakeBook(
+            fail_overflow=fail_overflow,
+            fail_main=fail_main,
+        )
 
 
 def _state(metadata: dict[str, object]) -> SnapshotCaptureState:
@@ -199,6 +216,24 @@ def test_overflow_write_failure_propagates_and_main_snapshot_is_not_claimed() ->
     # snapshot_error, which keeps full_snapshot_invariant false. Writing overflow
     # first also avoids a main row that falsely appears self-contained/successful.
     assert "collector_discovery_snapshot" not in store.book.sheets
+
+
+def test_main_write_failure_leaves_only_uncommitted_overflow_chunks() -> None:
+    metadata = {"large_payload": "x" * (SNAPSHOT_METADATA_INLINE_LIMIT + 10_000)}
+    store = _FakeStore(fail_main=True)
+
+    with pytest.raises(RuntimeError, match="collector_discovery_snapshot"):
+        hardened_append_snapshot_rows(
+            store,
+            run_id="COL-SNAPSHOT-MAIN-FAIL",
+            pair_list=[],
+            state=_state(metadata),
+        )
+
+    overflow = store.book.sheets[SNAPSHOT_OVERFLOW_SHEET]
+    assert len(overflow.rows) > 1
+    main = store.book.sheets["collector_discovery_snapshot"]
+    assert main.rows == [SNAPSHOT_HEADERS]
 
 
 def test_shadow_runtime_exposes_snapshot_persistence_version() -> None:
