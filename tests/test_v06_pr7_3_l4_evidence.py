@@ -364,8 +364,8 @@ def test_explicit_translation_source_is_translated_republish() -> None:
     assert any(item.evidence_type == "translation_source_evidence" for item in result.evidence)
 
 
-def test_pr733_is_l4_only_and_keeps_pr72_editorial_judge_frozen() -> None:
-    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.3"
+def test_pr734_is_l4_only_and_keeps_pr72_editorial_judge_frozen() -> None:
+    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.4"
     assert PUBLICATION_VERSION == "canonical-publication-v0.6-pr7.3.3"
     assert SOURCE_VERSION == "canonical-source-v0.6-pr7.3.3"
     assert EDITORIAL_JUDGE_VERSION == "editorial-judge-v0.6-pr7.2"
