@@ -177,6 +177,35 @@ def test_bjnews_strict_xinhua_lead_dateline_is_wire_republish() -> None:
     )
 
 
+def test_direct_xinhua_page_with_same_dateline_remains_original() -> None:
+    title = "权威部门回应经济运行热点问题"
+    record = _record(
+        "xinhua-direct-negative-pr736",
+        url="https://www.news.cn/politics/20260811/example.htm",
+        title=title,
+        source_name="新华社",
+        source_id="xinhua",
+    )
+    body = (
+        f"# {title}\n\n"
+        "新华社北京8月11日电 记者从有关部门获悉，相关政策将继续稳步推进。\n\n"
+        + ("新华社记者进一步采访了相关部门和行业专家。" * 100)
+    )
+
+    article = CanonicalArticleResolver().canonicalize(
+        _context(), record, _bundle(record.item_id, title=title, body=body)
+    )
+
+    assert article.hosting_source == "新华社"
+    assert article.canonical_source == "新华社"
+    assert article.original_publisher == "新华社"
+    assert article.source_relationship is SourceRelationship.ORIGINAL
+    assert article.source_action is SourceAction.NONE
+    assert not any(
+        item.evidence_type == "agency_dateline_evidence" for item in article.evidence
+    )
+
+
 def test_mid_body_xinhua_mention_does_not_trigger_agency_relationship() -> None:
     title = "国家治理案例中的信息来源与传播路径"
     record = _record(
