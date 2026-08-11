@@ -22,16 +22,18 @@ import re
 
 from ..contracts import (
     AcquisitionBundle,
+    AssetClass,
     DiscoveryRecord,
     SourceAction,
     SourceRelationship,
 )
-from .evidence import make_evidence, normalize_space
+from .evidence import host, make_evidence, normalize_space
 from . import source_resolution_v0733 as _base
 
 SOURCE_VERSION = "canonical-source-v0.6-pr7.3.6"
 SourceResolution = _base.SourceResolution
 
+_XINHUA_DIRECT_DOMAINS = ("news.cn", "xinhuanet.com")
 _SOURCE_LABEL_RE = re.compile(
     r"(?:来源|來源|稿源|原载|原載|转载自|轉載自)\s*[：:]\s*"
     r"(?P<publisher>[^|｜\n\r]{2,80}?)"
@@ -89,7 +91,12 @@ def resolve_source(
     stronger_original_url = base.action is SourceAction.REPLACE_WITH_ORIGINAL
 
     xinhua_excerpt = _xinhua_lead_dateline(record, bundle, resolved_title)
-    if xinhua_excerpt and not stronger_relationship and not stronger_original_url:
+    if (
+        xinhua_excerpt
+        and not _direct_xinhua_publisher(record, base, hosting, registered)
+        and not stronger_relationship
+        and not stronger_original_url
+    ):
         confidence = max(base.confidence, 0.99)
         evidence = _base_evidence(
             base,
@@ -155,7 +162,7 @@ def resolve_source(
         )
         if relationship is SourceRelationship.ORIGINAL:
             action = SourceAction.NONE
-        elif base.asset_class.value == "primary_document":
+        elif base.asset_class is AssetClass.PRIMARY_DOCUMENT:
             action = SourceAction.FIND_PRIMARY_DOCUMENT
         else:
             action = SourceAction.RETAIN_CURRENT_DISPLAY_URL
@@ -341,6 +348,28 @@ def _xinhua_lead_dateline(
     if match is None:
         return ""
     return _excerpt(sample, match)
+
+
+def _direct_xinhua_publisher(
+    record: DiscoveryRecord,
+    base: SourceResolution,
+    hosting: str,
+    registered: str,
+) -> bool:
+    for publisher in (
+        registered,
+        hosting,
+        base.canonical_source,
+        base.original_publisher,
+    ):
+        if _publisher_key(publisher) in {"新华社", "新华网"}:
+            return True
+
+    page_host = host(record.url)
+    return any(
+        page_host == domain or page_host.endswith("." + domain)
+        for domain in _XINHUA_DIRECT_DOMAINS
+    )
 
 
 def _title_local_sample(body: str, title: str, *, limit: int) -> str:
