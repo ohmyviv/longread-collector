@@ -17,9 +17,18 @@ from ...recall_instrumentation import (
 from ..contracts import RunContext
 from .comparison import PARALLEL_SHADOW_VERSION
 from .runner import FullParallelShadowRunner
+from .snapshot_persistence_v0735 import (
+    SNAPSHOT_PERSISTENCE_VERSION,
+    install_snapshot_persistence_hardening,
+)
 
-PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.4"
+PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.5"
 LEGACY_CONTROL_VERSION = "collector-v0.5.6m"
+
+# The legacy recall hook is installed while importing the v0.5.6m control chain.
+# Replace only its Sheet persistence function for v0.6 shadow runs; discovery,
+# acquisition and control semantics remain unchanged.
+install_snapshot_persistence_hardening()
 
 
 class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
@@ -93,6 +102,7 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
                     {
                         "pipeline_version": PARALLEL_SHADOW_PIPELINE_VERSION,
                         "control_version": LEGACY_CONTROL_VERSION,
+                        "snapshot_persistence_version": SNAPSHOT_PERSISTENCE_VERSION,
                         "snapshot_capture_error": (
                             snapshot.snapshot_error if snapshot is not None else ""
                         ),
@@ -111,6 +121,7 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
                     "version": PARALLEL_SHADOW_VERSION,
                     "pipeline_version": PARALLEL_SHADOW_PIPELINE_VERSION,
                     "control_version": LEGACY_CONTROL_VERSION,
+                    "snapshot_persistence_version": SNAPSHOT_PERSISTENCE_VERSION,
                     "status": "failed_open",
                     "error": f"{type(exc).__name__}: {exc}"[:2000],
                     "shadow_request_count": 0,
@@ -122,6 +133,9 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
             legacy_result["v06_shadow"] = shadow_payload
             legacy_result["v06_shadow_version"] = PARALLEL_SHADOW_PIPELINE_VERSION
             legacy_result["v06_shadow_control_version"] = LEGACY_CONTROL_VERSION
+            legacy_result["v06_shadow_snapshot_persistence_version"] = (
+                SNAPSHOT_PERSISTENCE_VERSION
+            )
             return legacy_result
         finally:
             end_snapshot_capture(snapshot_token)
