@@ -302,9 +302,9 @@ def test_legacy_bridge_and_shared_acquisition_preserve_structured_date_evidence(
     ]
 
 
-def test_pr733_versions_are_explicit_without_touching_l5() -> None:
+def test_pr734_advances_canonical_runtime_without_touching_pr733_publication() -> None:
     from longread_collector.v06.shadow.pipeline import PARALLEL_SHADOW_PIPELINE_VERSION
 
     assert PUBLICATION_VERSION == "canonical-publication-v0.6-pr7.3.3"
-    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.3"
-    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.3"
+    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.4"
+    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.4"
