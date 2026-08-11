@@ -206,11 +206,11 @@ def test_late_reference_named_original_does_not_flip_source_relationship() -> No
     assert result.source_action is SourceAction.NONE
 
 
-def test_pr733_versions_are_l4_only_and_keep_pr72_editorial_frozen() -> None:
+def test_pr734_versions_are_l4_only_and_keep_pr72_editorial_frozen() -> None:
     from longread_collector.v06.shadow.pipeline import PARALLEL_SHADOW_PIPELINE_VERSION
 
-    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.3"
+    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.4"
     assert PUBLICATION_VERSION == "canonical-publication-v0.6-pr7.3.3"
     assert SOURCE_VERSION == "canonical-source-v0.6-pr7.3.3"
-    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.3"
+    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.4"
     assert EDITORIAL_JUDGE_VERSION == "editorial-judge-v0.6-pr7.2"
