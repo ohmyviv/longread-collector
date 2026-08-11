@@ -232,6 +232,6 @@ def test_runtime_version_advances_without_changing_pr72_l5_or_control_authority(
         PARALLEL_SHADOW_PIPELINE_VERSION,
     )
 
-    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.6"
+    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.7"
     assert EDITORIAL_JUDGE_VERSION == "editorial-judge-v0.6-pr7.2"
     assert LEGACY_CONTROL_VERSION == "collector-v0.5.6m"
