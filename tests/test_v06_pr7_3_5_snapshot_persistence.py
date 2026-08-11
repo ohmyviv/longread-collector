@@ -243,7 +243,7 @@ def test_shadow_runtime_exposes_snapshot_persistence_version() -> None:
         PARALLEL_SHADOW_PIPELINE_VERSION,
     )
 
-    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.6"
+    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.7"
     assert LEGACY_CONTROL_VERSION == "collector-v0.5.6m"
     assert SNAPSHOT_PERSISTENCE_VERSION == "snapshot-persistence-v0.6-pr7.3.5"
     assert recall_instrumentation._append_snapshot_rows is hardened_append_snapshot_rows
