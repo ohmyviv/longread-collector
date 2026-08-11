@@ -2,7 +2,7 @@
 
 The PR-2 medium resolver intentionally prefers substantive prose, but a digital
 newspaper issue/index can contain many complete articles and therefore look like
-an unusually long standalone article.  This module adds a fail-closed override
+an unusually long standalone article. This module adds a fail-closed override
 only when issue identity and multi-article structure are both explicit.
 """
 
@@ -57,7 +57,7 @@ def recover_newspaper_issue_listing(
 ) -> SurfaceRecovery | None:
     """Recover explicit multi-article newspaper issue/index pages as LISTING.
 
-    The override is intentionally conjunctive.  A long article mentioning an
+    The override is intentionally conjunctive. A long article mentioning an
     electronic newspaper, a category page with many headings, or an index-like
     URL without acquired multi-article structure is not enough by itself.
     """
@@ -79,11 +79,16 @@ def recover_newspaper_issue_listing(
         return None
 
     # Newspaper issue navigation and its article links are expected near the
-    # beginning of the acquired body.  Keeping a bounded window avoids turning a
+    # beginning of the acquired body. Keeping a bounded window avoids turning a
     # distant recommendation/reference section into page-surface evidence.
     sample = body[:30000]
     edition_heading_count = len(_EDITION_HEADING_RE.findall(sample))
-    article_links = frozenset(_ARTICLE_LINK_RE.findall(sample))
+    current_host = _normalized_host(record.url)
+    article_links = frozenset(
+        link
+        for link in _ARTICLE_LINK_RE.findall(sample)
+        if current_host and _normalized_host(link) == current_host
+    )
     article_link_count = len(article_links)
 
     if edition_heading_count < 3 or article_link_count < 5:
@@ -100,7 +105,7 @@ def recover_newspaper_issue_listing(
     )
     excerpt = (
         f"identity={identity_signals}; edition_headings={edition_heading_count}; "
-        f"article_links={article_link_count}"
+        f"same_host_article_links={article_link_count}"
     )
     evidence = (
         make_evidence(
@@ -128,6 +133,10 @@ def recover_newspaper_issue_listing(
         confidence=confidence,
         evidence=evidence,
     )
+
+
+def _normalized_host(url: str) -> str:
+    return urlsplit(url).netloc.lower().removeprefix("www.")
 
 
 __all__ = [
