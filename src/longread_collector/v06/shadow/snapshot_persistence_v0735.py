@@ -31,13 +31,20 @@ SNAPSHOT_OVERFLOW_HEADERS = [
     "metadata_chunk",
 ]
 
-# Keep well below the documented 50k cell ceiling. The inline threshold is lower
-# than the chunk size only so normal metadata stays untouched while overflow
-# manifests retain ample headroom for future fields.
-SNAPSHOT_METADATA_INLINE_LIMIT = 45_000
-SNAPSHOT_METADATA_CHUNK_SIZE = 40_000
+# Stay comfortably below the documented 50k-cell ceiling. Python counts astral
+# Unicode as one code point while some backends account for the corresponding two
+# UTF-16 code units, so inline eligibility checks both measures. A 20k-code-point
+# chunk remains <=40k UTF-16 units even in the all-astral worst case.
+SNAPSHOT_METADATA_INLINE_LIMIT = 40_000
+SNAPSHOT_METADATA_CHUNK_SIZE = 20_000
 _OVERFLOW_BATCH_ROWS = 100
 _INSTALLED = False
+
+
+def _sheet_cell_units(value: str) -> int:
+    """Return a defensive UTF-16 code-unit count for Sheet cell sizing."""
+
+    return len(value.encode("utf-16-le")) // 2
 
 
 def _ensure_overflow_sheet(store: Any) -> Any:
@@ -67,7 +74,10 @@ def _metadata_storage(
     metadata: dict[str, Any],
 ) -> tuple[str, list[list[object]]]:
     payload = json.dumps(metadata, ensure_ascii=False, separators=(",", ":"))
-    if len(payload) <= SNAPSHOT_METADATA_INLINE_LIMIT:
+    if (
+        len(payload) <= SNAPSHOT_METADATA_INLINE_LIMIT
+        and _sheet_cell_units(payload) <= SNAPSHOT_METADATA_INLINE_LIMIT
+    ):
         return payload, []
 
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -84,6 +94,7 @@ def _metadata_storage(
                 "snapshot_id": snapshot_id,
                 "sha256": digest,
                 "chars": len(payload),
+                "utf16_units": _sheet_cell_units(payload),
                 "chunks": chunk_count,
             }
         },
