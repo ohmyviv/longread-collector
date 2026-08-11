@@ -186,13 +186,13 @@ def test_index_like_url_alone_does_not_trigger_without_multi_article_structure()
     assert article.main_content_medium is ContentMedium.WRITTEN_ARTICLE
 
 
-def test_pr734_versions_surface_only_and_keep_prior_layers_frozen() -> None:
+def test_pr734_surface_remains_frozen_under_current_pr736_runtime() -> None:
     from longread_collector.v06.shadow.pipeline import PARALLEL_SHADOW_PIPELINE_VERSION
 
-    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.4"
+    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.6"
     assert SURFACE_VERSION == "canonical-surface-v0.6-pr7.3.4"
-    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.4"
+    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.6"
     assert MEDIUM_VERSION == "canonical-medium-v0.6-pr2"
     assert PUBLICATION_VERSION == "canonical-publication-v0.6-pr7.3.3"
-    assert SOURCE_VERSION == "canonical-source-v0.6-pr7.3.3"
+    assert SOURCE_VERSION == "canonical-source-v0.6-pr7.3.6"
     assert EDITORIAL_JUDGE_VERSION == "editorial-judge-v0.6-pr7.2"

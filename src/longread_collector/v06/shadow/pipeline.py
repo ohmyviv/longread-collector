@@ -22,9 +22,9 @@ from .snapshot_persistence_v0735 import (
     install_snapshot_persistence_hardening,
 )
 
-# PR-7.3.5 is persistence-only. Keep the semantic collector/L1-L6 runtime on
-# PR-7.3.4 and expose the persistence component through its own version marker.
-PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.4"
+# PR-7.3.6 changes only L4 source semantics. PR-7.3.5 snapshot persistence stays
+# independently versioned and installed below; legacy v0.5.6m remains authority.
+PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.6"
 LEGACY_CONTROL_VERSION = "collector-v0.5.6m"
 
 # The legacy recall hook is installed while importing the v0.5.6m control chain.
