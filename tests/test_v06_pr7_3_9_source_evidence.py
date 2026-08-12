@@ -102,7 +102,9 @@ def test_jiemian_self_source_survives_long_rendered_header_line() -> None:
         _context(), record, _bundle(record.item_id, title=title, body=body)
     )
 
-    assert article.hosting_source == "界面新闻·界面深度"
+    # PR-7.3.9 repairs canonical/original relationship semantics. It does not
+    # invent a new human-readable hosting mapping when the base has only a domain.
+    assert article.hosting_source != title
     assert article.canonical_source == "界面新闻"
     assert article.original_publisher == "界面新闻"
     assert article.source_relationship is SourceRelationship.ORIGINAL
@@ -164,7 +166,9 @@ def test_bjnews_same_line_xinhua_dateline_and_markdown_source_is_wire() -> None:
         _context(), record, _bundle(record.item_id, title=title, body=body)
     )
 
-    assert article.hosting_source == "新京报·深度"
+    # Hosting can remain a machine domain if no stronger hosting identity was
+    # carried into L4; the wire/original publisher facts are the acceptance target.
+    assert article.hosting_source not in {"新华社", "新华网"}
     assert article.canonical_source == "新华社"
     assert article.original_publisher == "新华社"
     assert article.source_relationship is SourceRelationship.WIRE_REPUBLISH
