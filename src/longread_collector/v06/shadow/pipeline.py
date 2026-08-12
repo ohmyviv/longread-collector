@@ -17,15 +17,15 @@ from ...recall_instrumentation import (
 from ..contracts import RunContext
 from .comparison import PARALLEL_SHADOW_VERSION
 from .runner import FullParallelShadowRunner
-from .snapshot_persistence_v0735 import (
+from .snapshot_persistence_v0738 import (
     SNAPSHOT_PERSISTENCE_VERSION,
     install_snapshot_persistence_hardening,
 )
 
-# PR-7.3.7 changes only L4 publication/source facts. PR-7.3.5 snapshot
-# persistence stays independently versioned and installed below; legacy
-# v0.5.6m remains authority.
-PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.7"
+# PR-7.3.8 changes only L4 source identity and the independently versioned
+# Discovery snapshot persistence writer. PR-7.3.7 publication semantics remain
+# frozen and legacy v0.5.6m remains authority.
+PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.8"
 LEGACY_CONTROL_VERSION = "collector-v0.5.6m"
 
 # The legacy recall hook is installed while importing the v0.5.6m control chain.
