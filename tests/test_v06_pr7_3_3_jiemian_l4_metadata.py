@@ -200,8 +200,8 @@ def test_distant_byline_metadata_does_not_reopen_body_wide_date_scan() -> None:
 def test_current_pr738_keeps_pr72_editorial_frozen() -> None:
     from longread_collector.v06.shadow.pipeline import PARALLEL_SHADOW_PIPELINE_VERSION
 
-    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.8"
+    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.9"
     assert PUBLICATION_VERSION == "canonical-publication-v0.6-pr7.3.7"
-    assert SOURCE_VERSION == "canonical-source-v0.6-pr7.3.8"
-    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.8"
+    assert SOURCE_VERSION == "canonical-source-v0.6-pr7.3.9"
+    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.9"
     assert EDITORIAL_JUDGE_VERSION == "editorial-judge-v0.6-pr7.2"

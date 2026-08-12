@@ -189,10 +189,10 @@ def test_index_like_url_alone_does_not_trigger_without_multi_article_structure()
 def test_pr734_surface_remains_frozen_under_current_pr738_runtime() -> None:
     from longread_collector.v06.shadow.pipeline import PARALLEL_SHADOW_PIPELINE_VERSION
 
-    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.8"
+    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.9"
     assert SURFACE_VERSION == "canonical-surface-v0.6-pr7.3.4"
-    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.8"
+    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.9"
     assert MEDIUM_VERSION == "canonical-medium-v0.6-pr2"
     assert PUBLICATION_VERSION == "canonical-publication-v0.6-pr7.3.7"
-    assert SOURCE_VERSION == "canonical-source-v0.6-pr7.3.8"
+    assert SOURCE_VERSION == "canonical-source-v0.6-pr7.3.9"
     assert EDITORIAL_JUDGE_VERSION == "editorial-judge-v0.6-pr7.2"

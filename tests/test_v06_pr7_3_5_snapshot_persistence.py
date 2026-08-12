@@ -247,7 +247,7 @@ def test_shadow_runtime_exposes_historical_and_current_snapshot_versions() -> No
         PARALLEL_SHADOW_PIPELINE_VERSION,
     )
 
-    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.8"
+    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.9"
     assert LEGACY_CONTROL_VERSION == "collector-v0.5.6m"
     assert SNAPSHOT_PERSISTENCE_VERSION == "snapshot-persistence-v0.6-pr7.3.5"
     assert CURRENT_SNAPSHOT_PERSISTENCE_VERSION == "snapshot-persistence-v0.6-pr7.3.8"
