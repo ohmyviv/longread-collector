@@ -163,6 +163,9 @@ def test_timezone_bearing_byline_datetime_is_not_lexically_promoted() -> None:
         _context(), record, _bundle(record.item_id, title=title, body=body)
     )
 
+    # 17:30Z is already 2026-08-11 in Beijing. PR-7.3.3 must not truncate the
+    # lexical date to 2026-08-10; a BJT-aware upstream candidate may resolve it
+    # to 2026-08-11, otherwise conservative unknown is acceptable.
     assert result.published_at != "2026-08-10"
     assert not any(
         item.evidence_type == "legacy_publication_date_candidate"
