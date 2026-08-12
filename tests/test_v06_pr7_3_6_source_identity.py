@@ -17,7 +17,7 @@ from longread_collector.v06.contracts import (
     TechnicalStatus,
 )
 from longread_collector.v06.editorial import EDITORIAL_JUDGE_VERSION
-from longread_collector.v06.shadow.snapshot_persistence_v0735 import (
+from longread_collector.v06.shadow.snapshot_persistence_v0738 import (
     SNAPSHOT_PERSISTENCE_VERSION,
 )
 
@@ -274,14 +274,14 @@ def test_normal_publisher_label_is_not_truncated_without_metadata_label() -> Non
     assert article.original_publisher == "辽宁日报社评论部"
 
 
-def test_pr736_regressions_survive_current_pr737_l4_runtime() -> None:
+def test_pr736_regressions_survive_current_pr738_l4_runtime() -> None:
     from longread_collector.v06.shadow.pipeline import PARALLEL_SHADOW_PIPELINE_VERSION
 
-    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.7"
-    assert SOURCE_VERSION == "canonical-source-v0.6-pr7.3.7"
-    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.7"
+    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.8"
+    assert SOURCE_VERSION == "canonical-source-v0.6-pr7.3.8"
+    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.8"
     assert PUBLICATION_VERSION == "canonical-publication-v0.6-pr7.3.7"
     assert SURFACE_VERSION == "canonical-surface-v0.6-pr7.3.4"
-    assert SNAPSHOT_PERSISTENCE_VERSION == "snapshot-persistence-v0.6-pr7.3.5"
+    assert SNAPSHOT_PERSISTENCE_VERSION == "snapshot-persistence-v0.6-pr7.3.8"
     assert MEDIUM_VERSION == "canonical-medium-v0.6-pr2"
     assert EDITORIAL_JUDGE_VERSION == "editorial-judge-v0.6-pr7.2"
