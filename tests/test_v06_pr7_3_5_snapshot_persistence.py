@@ -20,6 +20,10 @@ from longread_collector.v06.shadow.snapshot_persistence_v0735 import (
     SNAPSHOT_PERSISTENCE_VERSION,
     hardened_append_snapshot_rows,
 )
+from longread_collector.v06.shadow.snapshot_persistence_v0738 import (
+    SNAPSHOT_PERSISTENCE_VERSION as CURRENT_SNAPSHOT_PERSISTENCE_VERSION,
+    hardened_append_snapshot_rows as current_hardened_append_snapshot_rows,
+)
 
 
 def _utf16_units(value: str) -> int:
@@ -236,14 +240,15 @@ def test_main_write_failure_leaves_only_uncommitted_overflow_chunks() -> None:
     assert main.rows == [SNAPSHOT_HEADERS]
 
 
-def test_shadow_runtime_exposes_snapshot_persistence_version() -> None:
+def test_shadow_runtime_exposes_historical_and_current_snapshot_versions() -> None:
     from longread_collector import recall_instrumentation
     from longread_collector.v06.shadow.pipeline import (
         LEGACY_CONTROL_VERSION,
         PARALLEL_SHADOW_PIPELINE_VERSION,
     )
 
-    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.7"
+    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.8"
     assert LEGACY_CONTROL_VERSION == "collector-v0.5.6m"
     assert SNAPSHOT_PERSISTENCE_VERSION == "snapshot-persistence-v0.6-pr7.3.5"
-    assert recall_instrumentation._append_snapshot_rows is hardened_append_snapshot_rows
+    assert CURRENT_SNAPSHOT_PERSISTENCE_VERSION == "snapshot-persistence-v0.6-pr7.3.8"
+    assert recall_instrumentation._append_snapshot_rows is current_hardened_append_snapshot_rows
