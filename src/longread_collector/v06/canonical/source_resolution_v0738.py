@@ -92,8 +92,14 @@ def resolve_source(
     if not _identity_is_fallback(base, record, bundle, resolved_title):
         return replace(base, evidence=evidence)
 
-    if _same_publisher(base.canonical_source, issuer) and _same_publisher(
-        base.hosting_source, issuer
+    # This is a normalization-completeness check, not a fuzzy publisher-match
+    # check. A fallback page title can contain the issuer as a substring while
+    # still being factually wrong as canonical_source, so only exact normalized
+    # identity equality may skip the repair.
+    issuer_key = _publisher_key(issuer)
+    if (
+        _publisher_key(base.canonical_source) == issuer_key
+        and _publisher_key(base.hosting_source) == issuer_key
     ):
         return replace(base, evidence=evidence)
 
@@ -220,12 +226,6 @@ def _title_local_sample(body: str, title: str, *, limit: int) -> str:
             if 0 <= position <= 12000:
                 return value[position : position + limit]
     return value[:limit]
-
-
-def _same_publisher(left: str, right: str) -> bool:
-    a = _publisher_key(left)
-    b = _publisher_key(right)
-    return bool(a and b and (a == b or a in b or b in a))
 
 
 def _publisher_key(value: str) -> str:
