@@ -131,7 +131,8 @@ def test_moderate_template_recovery_does_not_rescue_short_low_depth_page() -> No
     body = (
         f"# {title}\n\n"
         "Officials said the meeting happened Tuesday. The city announced a change after the meeting. "
-        "The statement confirmed the new schedule. "
+        "According to a statement, the change follows an earlier meeting where a person was arrested. "
+        "Officials confirmed the schedule and said the town hall format would remain virtual for now. "
     ) * 8
     prose = len("".join(body.split()))
     bundle = _bundle(article, body, template_length=int(prose * 2.35))
@@ -232,6 +233,6 @@ def test_runtime_version_advances_without_changing_pr72_l5_or_control_authority(
         PARALLEL_SHADOW_PIPELINE_VERSION,
     )
 
-    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.8"
+    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.9"
     assert EDITORIAL_JUDGE_VERSION == "editorial-judge-v0.6-pr7.2"
     assert LEGACY_CONTROL_VERSION == "collector-v0.5.6m"
