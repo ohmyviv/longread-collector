@@ -131,8 +131,7 @@ def test_moderate_template_recovery_does_not_rescue_short_low_depth_page() -> No
     body = (
         f"# {title}\n\n"
         "Officials said the meeting happened Tuesday. The city announced a change after the meeting. "
-        "According to a statement, the change follows an earlier meeting where a person was arrested. "
-        "Officials confirmed the schedule and said the town hall format would remain virtual for now. "
+        "The statement confirmed the new schedule. "
     ) * 8
     prose = len("".join(body.split()))
     bundle = _bundle(article, body, template_length=int(prose * 2.35))
