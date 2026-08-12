@@ -145,11 +145,20 @@ def resolve_source(
         )
 
     # Re-apply the PR-7.3.3 self-source contract without depending on rendered
-    # line length or the source label being the final token on that line.
-    if (
+    # line length or the source label being the final token on that line. The
+    # same strong evidence can repair either the historical false-secondary
+    # shape or a weak ORIGINAL/NONE domain/title fallback created when the long
+    # rendered line prevents the base explicit-source parser from seeing the
+    # source label at all.
+    self_source_eligible = (
         base.relationship is SourceRelationship.SECONDARY_REPUBLISH
         and base.action is SourceAction.RETAIN_CURRENT_DISPLAY_URL
-    ):
+    ) or (
+        base.relationship is SourceRelationship.ORIGINAL
+        and base.action is SourceAction.NONE
+        and _identity_is_fallback(base, record, bundle, resolved_title)
+    )
+    if self_source_eligible:
         publisher, excerpt = _title_local_self_source(
             record, bundle, resolved_title
         )
@@ -406,13 +415,11 @@ def _matches_explicit_source_evidence(base: SourceResolution, cleaned: str) -> b
 
 
 def _direct_xinhua_publisher(record: DiscoveryRecord, base: SourceResolution) -> bool:
+    # Direct-publisher identity is a hosting fact. Canonical/original publisher
+    # labels may legitimately name Xinhua on a republisher page and therefore
+    # must not be used to infer that the *current page* is hosted by Xinhua.
     registered = normalize_space(record.raw_metadata.get("source_name", ""))
-    for publisher in (
-        registered,
-        base.hosting_source,
-        base.canonical_source,
-        base.original_publisher,
-    ):
+    for publisher in (registered, base.hosting_source):
         if _publisher_key(publisher) in {"新华社", "新华网"}:
             return True
     page_host = host(record.url)
