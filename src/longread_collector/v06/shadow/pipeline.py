@@ -22,10 +22,10 @@ from .snapshot_persistence_v0738 import (
     install_snapshot_persistence_hardening,
 )
 
-# PR-7.3.8 changes only L4 source identity and the independently versioned
-# Discovery snapshot persistence writer. PR-7.3.7 publication semantics remain
-# frozen and legacy v0.5.6m remains authority.
-PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.8"
+# PR-7.3.9 changes only L4 source-evidence interpretation. PR-7.3.7
+# publication semantics and PR-7.3.8 snapshot persistence remain frozen, and
+# legacy v0.5.6m remains authority.
+PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.9"
 LEGACY_CONTROL_VERSION = "collector-v0.5.6m"
 
 # The legacy recall hook is installed while importing the v0.5.6m control chain.
