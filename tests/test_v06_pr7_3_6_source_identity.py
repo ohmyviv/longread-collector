@@ -284,4 +284,4 @@ def test_pr736_regressions_survive_current_pr738_l4_runtime() -> None:
     assert SURFACE_VERSION == "canonical-surface-v0.6-pr7.3.4"
     assert SNAPSHOT_PERSISTENCE_VERSION == "snapshot-persistence-v0.6-pr7.3.8"
     assert MEDIUM_VERSION == "canonical-medium-v0.6-pr2"
-    assert EDITORIAL_JUDGE_VERSION == "editorial-judge-v0.6-pr7.3.2" if False else "editorial-judge-v0.6-pr7.2"
+    assert EDITORIAL_JUDGE_VERSION == "editorial-judge-v0.6-pr7.2"
