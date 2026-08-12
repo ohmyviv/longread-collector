@@ -365,7 +365,7 @@ def test_explicit_translation_source_is_translated_republish() -> None:
 
 
 def test_pr73_evidence_regressions_survive_current_pr738_runtime() -> None:
-    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.8"
+    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.9"
     assert PUBLICATION_VERSION == "canonical-publication-v0.6-pr7.3.7"
-    assert SOURCE_VERSION == "canonical-source-v0.6-pr7.3.8"
+    assert SOURCE_VERSION == "canonical-source-v0.6-pr7.3.9"
     assert EDITORIAL_JUDGE_VERSION == "editorial-judge-v0.6-pr7.2"
