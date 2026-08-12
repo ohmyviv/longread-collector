@@ -216,6 +216,9 @@ def test_overflow_write_failure_propagates_and_main_snapshot_is_not_claimed() ->
             state=_state(metadata),
         )
 
+    # The production recall wrapper catches this propagated failure and records
+    # snapshot_error, which keeps full_snapshot_invariant false. Writing overflow
+    # first also avoids a main row that falsely appears self-contained/successful.
     assert "collector_discovery_snapshot" not in store.book.sheets
 
 
