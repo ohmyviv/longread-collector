@@ -67,9 +67,10 @@ def _overflow_storage(
     """Return an inline value or a lossless manifest plus chunk rows.
 
     Non-string scalar values stay typed while small. Oversized values are stored
-    exactly as the string that would otherwise be sent to Sheets. A cell-specific
-    overflow id avoids ambiguity when multiple oversized fields in the same row
-    have identical payloads.
+    exactly as the string that would otherwise be sent to Sheets. Metadata keeps
+    the PR-7.3.5 row snapshot identity; newly supported non-metadata cells use a
+    field-specific overflow id so multiple oversized cells in one row cannot
+    collide, even when their payloads are identical.
     """
 
     text = "" if value is None else str(value)
@@ -80,33 +81,39 @@ def _overflow_storage(
         return value, []
 
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-    overflow_id = hashlib.sha256(
-        f"{row_snapshot_id}|{field_name}".encode("utf-8")
-    ).hexdigest()[:24]
+    if field_name == "metadata_json":
+        # Preserve the PR-7.3.5 manifest/chunk identity contract exactly: the
+        # overflow snapshot_id is the same ID written in the main snapshot row.
+        overflow_id = row_snapshot_id
+        manifest_key = "_snapshot_metadata_overflow"
+    else:
+        overflow_id = hashlib.sha256(
+            f"{row_snapshot_id}|{field_name}".encode("utf-8")
+        ).hexdigest()[:24]
+        manifest_key = "_snapshot_cell_overflow"
     chunks = [
         text[offset : offset + SNAPSHOT_METADATA_CHUNK_SIZE]
         for offset in range(0, len(text), SNAPSHOT_METADATA_CHUNK_SIZE)
     ]
     chunk_count = len(chunks)
-    manifest_key = (
-        "_snapshot_metadata_overflow"
-        if field_name == "metadata_json"
-        else "_snapshot_cell_overflow"
-    )
-    manifest = json.dumps(
-        {
-            manifest_key: {
-                "version": SNAPSHOT_PERSISTENCE_VERSION,
-                "sheet": SNAPSHOT_OVERFLOW_SHEET,
-                "snapshot_id": overflow_id,
+    manifest_payload = {
+        "version": SNAPSHOT_PERSISTENCE_VERSION,
+        "sheet": SNAPSHOT_OVERFLOW_SHEET,
+        "snapshot_id": overflow_id,
+        "sha256": digest,
+        "chars": len(text),
+        "utf16_units": _sheet_cell_units(text),
+        "chunks": chunk_count,
+    }
+    if field_name != "metadata_json":
+        manifest_payload.update(
+            {
                 "row_snapshot_id": row_snapshot_id,
                 "field": field_name,
-                "sha256": digest,
-                "chars": len(text),
-                "utf16_units": _sheet_cell_units(text),
-                "chunks": chunk_count,
             }
-        },
+        )
+    manifest = json.dumps(
+        {manifest_key: manifest_payload},
         ensure_ascii=False,
         separators=(",", ":"),
     )
