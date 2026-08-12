@@ -35,6 +35,11 @@ _DOCUMENT_ISSUER_RE = re.compile(
     r"|[|｜\n\r]|$)",
     re.M,
 )
+_DOCUMENT_HEADER_FIELD_RE = re.compile(
+    r"(?:^|\n)\s*(?:[*+-]\s*)?"
+    r"(?:索引号|发文字号|成文日期|发布日期|主题分类|有效性|公开方式)\s*[：:]",
+    re.M,
+)
 
 
 def resolve_source(
@@ -54,7 +59,7 @@ def resolve_source(
     )
     evidence = _retag_version(base.evidence)
 
-    issuer, excerpt = _bounded_document_issuer(
+    issuer, excerpt, header_field_count = _bounded_document_issuer(
         record,
         bundle,
         resolved_title,
@@ -62,7 +67,16 @@ def resolve_source(
     if not issuer:
         return replace(base, evidence=evidence)
 
-    is_primary = primary_document_hint or base.asset_class is AssetClass.PRIMARY_DOCUMENT
+    # Some legacy/compact fixtures do not carry a stable upstream asset-class
+    # hint even though the page exposes a strong structured government-document
+    # header. Require at least three additional document metadata labels before
+    # allowing that header itself to establish the primary-document condition.
+    structured_primary = header_field_count >= 3
+    is_primary = (
+        primary_document_hint
+        or base.asset_class is AssetClass.PRIMARY_DOCUMENT
+        or structured_primary
+    )
     if not is_primary or not _direct_government_host(record.url):
         return replace(base, evidence=evidence)
 
@@ -96,7 +110,10 @@ def resolve_source(
             "canonical_source",
             issuer,
             confidence=0.99,
-            excerpt=excerpt[:360],
+            excerpt=(
+                f"header_fields={header_field_count}; "
+                f"structured_primary={str(structured_primary).lower()}; {excerpt[:300]}"
+            ),
             extractor=SOURCE_VERSION,
         )
     )
@@ -142,7 +159,7 @@ def _bounded_document_issuer(
     record: DiscoveryRecord,
     bundle: AcquisitionBundle,
     resolved_title: str,
-) -> tuple[str, str]:
+) -> tuple[str, str, int]:
     body = bundle.body_markdown or bundle.body_text or ""
     sample = _title_local_sample(
         body,
@@ -151,11 +168,12 @@ def _bounded_document_issuer(
     )
     match = _DOCUMENT_ISSUER_RE.search(sample)
     if match is None:
-        return "", ""
+        return "", "", 0
     issuer = normalize_space(match.group("issuer")).strip(" ：:|｜*-+")[:80]
     if not issuer or issuer.startswith(("http://", "https://")):
-        return "", ""
-    return issuer, _excerpt(sample, match)
+        return "", "", 0
+    header_field_count = len(_DOCUMENT_HEADER_FIELD_RE.findall(sample))
+    return issuer, _excerpt(sample, match), header_field_count
 
 
 def _identity_is_fallback(
