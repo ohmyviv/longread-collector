@@ -82,8 +82,8 @@ def _overflow_storage(
 
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
     if field_name == "metadata_json":
-        # Preserve the PR-7.3.5 manifest/chunk identity contract exactly: the
-        # overflow snapshot_id is the same ID written in the main snapshot row.
+        # Preserve the PR-7.3.5 identity contract: metadata overflow rows retain
+        # the same snapshot_id as the corresponding main snapshot row.
         overflow_id = row_snapshot_id
         manifest_key = "_snapshot_metadata_overflow"
     else:
@@ -100,18 +100,14 @@ def _overflow_storage(
         "version": SNAPSHOT_PERSISTENCE_VERSION,
         "sheet": SNAPSHOT_OVERFLOW_SHEET,
         "snapshot_id": overflow_id,
+        "field": field_name,
         "sha256": digest,
         "chars": len(text),
         "utf16_units": _sheet_cell_units(text),
         "chunks": chunk_count,
     }
     if field_name != "metadata_json":
-        manifest_payload.update(
-            {
-                "row_snapshot_id": row_snapshot_id,
-                "field": field_name,
-            }
-        )
+        manifest_payload["row_snapshot_id"] = row_snapshot_id
     manifest = json.dumps(
         {manifest_key: manifest_payload},
         ensure_ascii=False,
