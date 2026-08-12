@@ -216,9 +216,6 @@ def test_overflow_write_failure_propagates_and_main_snapshot_is_not_claimed() ->
             state=_state(metadata),
         )
 
-    # The production recall wrapper catches this propagated failure and records
-    # snapshot_error, which keeps full_snapshot_invariant false. Writing overflow
-    # first also avoids a main row that falsely appears self-contained/successful.
     assert "collector_discovery_snapshot" not in store.book.sheets
 
 
@@ -247,7 +244,7 @@ def test_shadow_runtime_exposes_historical_and_current_snapshot_versions() -> No
         PARALLEL_SHADOW_PIPELINE_VERSION,
     )
 
-    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.8"
+    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.9"
     assert LEGACY_CONTROL_VERSION == "collector-v0.5.6m"
     assert SNAPSHOT_PERSISTENCE_VERSION == "snapshot-persistence-v0.6-pr7.3.5"
     assert CURRENT_SNAPSHOT_PERSISTENCE_VERSION == "snapshot-persistence-v0.6-pr7.3.8"
