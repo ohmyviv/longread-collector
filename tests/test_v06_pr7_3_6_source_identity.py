@@ -196,6 +196,8 @@ def test_direct_xinhua_page_with_same_dateline_remains_original() -> None:
         _context(), record, _bundle(record.item_id, title=title, body=body)
     )
 
+    # The guard is about relationship semantics, not a new global mapping from
+    # official domains to human publisher labels. Preserve the prior host identity.
     assert article.hosting_source == "news.cn"
     assert article.source_relationship is SourceRelationship.ORIGINAL
     assert article.source_action is SourceAction.NONE
