@@ -163,9 +163,6 @@ def test_timezone_bearing_byline_datetime_is_not_lexically_promoted() -> None:
         _context(), record, _bundle(record.item_id, title=title, body=body)
     )
 
-    # 17:30Z is already 2026-08-11 in Beijing. PR-7.3.3 must not truncate the
-    # lexical date to 2026-08-10; a BJT-aware upstream candidate may resolve it
-    # to 2026-08-11, otherwise conservative unknown is acceptable.
     assert result.published_at != "2026-08-10"
     assert not any(
         item.evidence_type == "legacy_publication_date_candidate"
@@ -200,8 +197,8 @@ def test_distant_byline_metadata_does_not_reopen_body_wide_date_scan() -> None:
 def test_current_pr738_keeps_pr72_editorial_frozen() -> None:
     from longread_collector.v06.shadow.pipeline import PARALLEL_SHADOW_PIPELINE_VERSION
 
-    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.8"
+    assert CANONICAL_SERVICE_VERSION == "canonical-article-resolver-v0.6-pr7.3.9"
     assert PUBLICATION_VERSION == "canonical-publication-v0.6-pr7.3.7"
-    assert SOURCE_VERSION == "canonical-source-v0.6-pr7.3.8"
-    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.8"
+    assert SOURCE_VERSION == "canonical-source-v0.6-pr7.3.9"
+    assert PARALLEL_SHADOW_PIPELINE_VERSION == "collector-v0.6-pr7.3.9"
     assert EDITORIAL_JUDGE_VERSION == "editorial-judge-v0.6-pr7.2"
