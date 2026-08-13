@@ -8,7 +8,10 @@ from typing import Any
 
 from ...extraction import FallbackBudget
 from ...models import DiscoveredURL, ExtractedArticle
-from ...pipeline_v056f import NativeCollectorPipeline as LegacyV056mPipeline
+from ...pipeline_phase0b import (
+    SOURCE_SELECTION_POLICY_VERSION,
+    NativeCollectorPipeline as LegacyV056mPipeline,
+)
 from ...recall_instrumentation import (
     begin_snapshot_capture,
     current_snapshot_capture,
@@ -24,8 +27,9 @@ from .snapshot_persistence_phase0a import (
 
 # PR-7.3.9 changes only L4 source-evidence interpretation. PR-7.3.7
 # publication semantics and PR-7.3.8 all-cell overflow persistence remain
-# frozen. Phase 0A adds only durable persistence readback/fail-closed auditing;
-# legacy v0.5.6m remains content authority.
+# frozen. Phase 0A adds only durable persistence readback/fail-closed auditing.
+# Phase 0B wraps source selection ahead of the same v0.5.6m downstream control
+# semantics; its freshness policy is disabled unless active Sheet config opts in.
 PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.9"
 LEGACY_CONTROL_VERSION = "collector-v0.5.6m"
 
@@ -116,6 +120,7 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
                     {
                         "pipeline_version": PARALLEL_SHADOW_PIPELINE_VERSION,
                         "control_version": LEGACY_CONTROL_VERSION,
+                        "source_selection_policy_version": SOURCE_SELECTION_POLICY_VERSION,
                         "snapshot_persistence_version": SNAPSHOT_PERSISTENCE_VERSION,
                         "snapshot_capture_error": (
                             snapshot.snapshot_error if snapshot is not None else ""
@@ -139,6 +144,7 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
                     "version": PARALLEL_SHADOW_VERSION,
                     "pipeline_version": PARALLEL_SHADOW_PIPELINE_VERSION,
                     "control_version": LEGACY_CONTROL_VERSION,
+                    "source_selection_policy_version": SOURCE_SELECTION_POLICY_VERSION,
                     "snapshot_persistence_version": SNAPSHOT_PERSISTENCE_VERSION,
                     "status": "failed_open",
                     "error": f"{type(exc).__name__}: {exc}"[:2000],
@@ -151,6 +157,9 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
             legacy_result["v06_shadow"] = shadow_payload
             legacy_result["v06_shadow_version"] = PARALLEL_SHADOW_PIPELINE_VERSION
             legacy_result["v06_shadow_control_version"] = LEGACY_CONTROL_VERSION
+            legacy_result["v06_shadow_source_selection_policy_version"] = (
+                SOURCE_SELECTION_POLICY_VERSION
+            )
             legacy_result["v06_shadow_snapshot_persistence_version"] = (
                 SNAPSHOT_PERSISTENCE_VERSION
             )
