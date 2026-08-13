@@ -109,6 +109,16 @@ jobs:
           set -o pipefail
           longread-collector collect --group '${{ steps.group.outputs.group }}' | tee collector-result.json
 
+      - name: Verify durable Discovery snapshot
+        shell: bash
+        run: |
+          jq -e '
+            .final_status == "success" and
+            .discovery_snapshot_status == "success" and
+            .discovery_snapshot_readback_performed == true and
+            (.discovery_snapshot_persisted_rows == .discovery_snapshot_rows)
+          ' collector-result.json >/dev/null
+
       - name: Archive parallel-shadow evidence
         if: always()
         uses: actions/upload-artifact@v4
