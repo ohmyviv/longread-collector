@@ -29,9 +29,10 @@ from .snapshot_persistence_phase0a import (
 PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.9"
 LEGACY_CONTROL_VERSION = "collector-v0.5.6m"
 
-# The legacy recall hook is installed while importing the v0.5.6m control chain.
-# Replace only its Sheet persistence function for v0.6 shadow runs; discovery,
-# acquisition and editorial semantics remain unchanged.
+# Keep the PR-7.3.8 writer identity and attach only an opt-in verifier. The
+# ``collect`` method marks the shared capture state as requiring readback before
+# entering the legacy control chain, so historical/direct writer calls remain
+# byte-for-byte compatible unless Phase 0A verification is explicitly requested.
 install_snapshot_persistence_invariant()
 
 
@@ -65,6 +66,9 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
         group = str(group_id or "all")
         self._v06_acquired_pairs = []
         snapshot_token = begin_snapshot_capture(group)
+        snapshot = current_snapshot_capture()
+        if snapshot is not None:
+            snapshot.snapshot_readback_required = True
         try:
             legacy_result = await super().collect(group_id=group_id, query_file=query_file)
             snapshot = current_snapshot_capture()
