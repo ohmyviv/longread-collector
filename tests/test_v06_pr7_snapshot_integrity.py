@@ -122,6 +122,8 @@ def test_sidecar_observes_inner_legacy_full_snapshot(monkeypatch: pytest.MonkeyP
                 "scheduled_at_bj": "2026-08-08 03:57:00",
                 "final_status": "success",
                 "discovery_snapshot_rows": 3,
+                "discovery_snapshot_persisted_rows": 3,
+                "discovery_snapshot_readback_performed": True,
                 "discovery_snapshot_status": "success",
             }
         finally:
@@ -149,6 +151,8 @@ def test_sidecar_observes_inner_legacy_full_snapshot(monkeypatch: pytest.MonkeyP
     assert runner.captured_count == 3
     assert shadow["discovery_snapshot_count"] == 3
     assert shadow["control_discovery_snapshot_count"] == 3
+    assert shadow["persisted_discovery_snapshot_count"] == 3
+    assert shadow["snapshot_readback_performed"] is True
     assert shadow["capture_gap_count"] == 0
     assert shadow["full_snapshot_invariant"] is True
 
@@ -164,6 +168,8 @@ def test_snapshot_count_mismatch_cannot_pass_integrity(monkeypatch: pytest.Monke
             "scheduled_at_bj": "2026-08-08 03:57:00",
             "final_status": "success",
             "discovery_snapshot_rows": 4,
+            "discovery_snapshot_persisted_rows": 4,
+            "discovery_snapshot_readback_performed": True,
             "discovery_snapshot_status": "success",
         }
 
@@ -185,4 +191,5 @@ def test_snapshot_count_mismatch_cannot_pass_integrity(monkeypatch: pytest.Monke
     result = asyncio.run(pipeline.collect(group_id="pre_report"))
     assert result["v06_shadow"]["discovery_snapshot_count"] == 0
     assert result["v06_shadow"]["control_discovery_snapshot_count"] == 4
+    assert result["v06_shadow"]["persisted_discovery_snapshot_count"] == 4
     assert result["v06_shadow"]["full_snapshot_invariant"] is False

@@ -17,29 +17,31 @@ from ...recall_instrumentation import (
 from ..contracts import RunContext
 from .comparison import PARALLEL_SHADOW_VERSION
 from .runner import FullParallelShadowRunner
-from .snapshot_persistence_v0738 import (
+from .snapshot_persistence_phase0a import (
     SNAPSHOT_PERSISTENCE_VERSION,
-    install_snapshot_persistence_hardening,
+    install_snapshot_persistence_invariant,
 )
 
 # PR-7.3.9 changes only L4 source-evidence interpretation. PR-7.3.7
-# publication semantics and PR-7.3.8 snapshot persistence remain frozen, and
-# legacy v0.5.6m remains authority.
+# publication semantics and PR-7.3.8 all-cell overflow persistence remain
+# frozen. Phase 0A adds only durable persistence readback/fail-closed auditing;
+# legacy v0.5.6m remains content authority.
 PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.9"
 LEGACY_CONTROL_VERSION = "collector-v0.5.6m"
 
-# The legacy recall hook is installed while importing the v0.5.6m control chain.
-# Replace only its Sheet persistence function for v0.6 shadow runs; discovery,
-# acquisition and control semantics remain unchanged.
-install_snapshot_persistence_hardening()
+# Keep the PR-7.3.8 writer identity and attach only an opt-in verifier. The
+# ``collect`` method marks the shared capture state as requiring readback before
+# entering the legacy control chain, so historical/direct writer calls remain
+# byte-for-byte compatible unless Phase 0A verification is explicitly requested.
+install_snapshot_persistence_invariant()
 
 
 class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
     """Run legacy control once, then evaluate v0.6 on the exact same evidence.
 
     The sidecar never calls a discovery or acquisition client itself. Shadow
-    failures are returned as diagnostic data and cannot fail a successful legacy
-    collection run.
+    semantic failures remain diagnostic, while the surrounding scheduled
+    workflow separately enforces the durable control-snapshot invariant.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -64,6 +66,9 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
         group = str(group_id or "all")
         self._v06_acquired_pairs = []
         snapshot_token = begin_snapshot_capture(group)
+        snapshot = current_snapshot_capture()
+        if snapshot is not None:
+            snapshot.snapshot_readback_required = True
         try:
             legacy_result = await super().collect(group_id=group_id, query_file=query_file)
             snapshot = current_snapshot_capture()
@@ -89,6 +94,12 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
                 expected_snapshot_count = int(
                     legacy_result.get("discovery_snapshot_rows") or 0
                 )
+                persisted_snapshot_count = int(
+                    legacy_result.get("discovery_snapshot_persisted_rows") or 0
+                )
+                snapshot_readback_performed = bool(
+                    legacy_result.get("discovery_snapshot_readback_performed", False)
+                )
                 actual_snapshot_count = int(
                     shadow_payload.get("discovery_snapshot_count") or 0
                 )
@@ -110,16 +121,20 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
                             snapshot.snapshot_error if snapshot is not None else ""
                         ),
                         "control_discovery_snapshot_count": expected_snapshot_count,
+                        "persisted_discovery_snapshot_count": persisted_snapshot_count,
+                        "snapshot_readback_performed": snapshot_readback_performed,
                         "capture_gap_count": capture_gap_count,
                         "full_snapshot_invariant": (
                             snapshot_status == "success"
+                            and snapshot_readback_performed
                             and expected_snapshot_count > 0
+                            and persisted_snapshot_count == expected_snapshot_count
                             and actual_snapshot_count == expected_snapshot_count
                             and capture_gap_count == 0
                         ),
                     }
                 )
-            except Exception as exc:  # shadow must never take down control
+            except Exception as exc:  # shadow semantics must not take down control
                 shadow_payload = {
                     "version": PARALLEL_SHADOW_VERSION,
                     "pipeline_version": PARALLEL_SHADOW_PIPELINE_VERSION,
