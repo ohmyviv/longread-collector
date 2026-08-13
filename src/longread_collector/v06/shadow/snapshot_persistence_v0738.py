@@ -29,6 +29,7 @@ from .snapshot_persistence_v0735 import (
 SNAPSHOT_PERSISTENCE_VERSION = "snapshot-persistence-v0.6-pr7.3.8"
 _OVERFLOW_BATCH_ROWS = 100
 _INSTALLED = False
+_POST_PERSISTENCE_VERIFIER: Any | None = None
 
 
 def _sheet_cell_units(value: str) -> int:
@@ -158,6 +159,28 @@ def _guard_row_cells(
     return guarded, overflow_rows
 
 
+def _verify_if_requested(
+    store: Any,
+    *,
+    run_id: str,
+    state: _recall.SnapshotCaptureState,
+    written_rows: int,
+) -> int:
+    verifier = _POST_PERSISTENCE_VERIFIER
+    if verifier is None or not bool(
+        getattr(state, "snapshot_readback_required", False)
+    ):
+        return written_rows
+    return int(
+        verifier(
+            store=store,
+            run_id=run_id,
+            state=state,
+            written_rows=written_rows,
+        )
+    )
+
+
 def hardened_append_snapshot_rows(
     store: Any,
     *,
@@ -168,7 +191,12 @@ def hardened_append_snapshot_rows(
     """Persist the full Discovery snapshot with lossless protection on every cell."""
 
     if not state.discoveries:
-        return 0
+        return _verify_if_requested(
+            store,
+            run_id=run_id,
+            state=state,
+            written_rows=0,
+        )
 
     processed: dict[str, tuple[DiscoveredURL, ExtractedArticle]] = {}
     for discovered, article in pair_list:
@@ -242,7 +270,19 @@ def hardened_append_snapshot_rows(
 
     ws = _recall._ensure_snapshot_sheet(store)
     ws.append_rows(rows, value_input_option="USER_ENTERED", table_range="A:AC")
-    return len(rows)
+    return _verify_if_requested(
+        store,
+        run_id=run_id,
+        state=state,
+        written_rows=len(rows),
+    )
+
+
+def install_post_persistence_verifier(verifier: Any) -> None:
+    """Install an opt-in verifier without changing the PR-7.3.8 writer identity."""
+
+    global _POST_PERSISTENCE_VERIFIER
+    _POST_PERSISTENCE_VERIFIER = verifier
 
 
 def install_snapshot_persistence_hardening() -> None:
@@ -262,5 +302,6 @@ __all__ = [
     "SNAPSHOT_OVERFLOW_SHEET",
     "SNAPSHOT_PERSISTENCE_VERSION",
     "hardened_append_snapshot_rows",
+    "install_post_persistence_verifier",
     "install_snapshot_persistence_hardening",
 ]
