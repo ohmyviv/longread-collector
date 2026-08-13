@@ -8,69 +8,53 @@ from typing import Any
 
 from ...extraction import FallbackBudget
 from ...models import DiscoveredURL, ExtractedArticle
+from ...pipeline_phase0b import SOURCE_SELECTION_POLICY_VERSION, Phase0BSourceSelectionHook
 from ...pipeline_v056f import NativeCollectorPipeline as LegacyV056mPipeline
-from ...recall_instrumentation import (
-    begin_snapshot_capture,
-    current_snapshot_capture,
-    end_snapshot_capture,
-)
+from ...recall_instrumentation import begin_snapshot_capture, current_snapshot_capture, end_snapshot_capture
 from ..contracts import RunContext
 from .comparison import PARALLEL_SHADOW_VERSION
 from .runner import FullParallelShadowRunner
-from .snapshot_persistence_phase0a import (
-    SNAPSHOT_PERSISTENCE_VERSION,
-    install_snapshot_persistence_invariant,
-)
+from .snapshot_persistence_phase0a import SNAPSHOT_PERSISTENCE_VERSION, install_snapshot_persistence_invariant
 
-# PR-7.3.9 changes only L4 source-evidence interpretation. PR-7.3.7
-# publication semantics and PR-7.3.8 all-cell overflow persistence remain
-# frozen. Phase 0A adds only durable persistence readback/fail-closed auditing;
-# legacy v0.5.6m remains content authority.
 PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.9"
 LEGACY_CONTROL_VERSION = "collector-v0.5.6m"
 
-# Keep the PR-7.3.8 writer identity and attach only an opt-in verifier. The
-# ``collect`` method marks the shared capture state as requiring readback before
-# entering the legacy control chain, so historical/direct writer calls remain
-# byte-for-byte compatible unless Phase 0A verification is explicitly requested.
 install_snapshot_persistence_invariant()
 
 
 class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
-    """Run legacy control once, then evaluate v0.6 on the exact same evidence.
-
-    The sidecar never calls a discovery or acquisition client itself. Shadow
-    semantic failures remain diagnostic, while the surrounding scheduled
-    workflow separately enforces the durable control-snapshot invariant.
-    """
+    """Run legacy control once, then evaluate v0.6 on the exact same evidence."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._v06_acquired_pairs: list[tuple[DiscoveredURL, ExtractedArticle]] = []
         self._v06_runner = FullParallelShadowRunner()
 
-    async def _extract_batch(
-        self,
-        discovered: list[DiscoveredURL],
-        fallback_budget: FallbackBudget,
-    ) -> list[ExtractedArticle]:
+    async def _extract_batch(self, discovered: list[DiscoveredURL], fallback_budget: FallbackBudget) -> list[ExtractedArticle]:
         articles = await super()._extract_batch(discovered, fallback_budget)
         self._v06_acquired_pairs.extend(zip(discovered, articles, strict=True))
         return articles
 
-    async def collect(
-        self,
-        group_id: str | None = None,
-        query_file: Path | None = None,
-    ) -> dict[str, Any]:
+    async def collect(self, group_id: str | None = None, query_file: Path | None = None) -> dict[str, Any]:
         group = str(group_id or "all")
         self._v06_acquired_pairs = []
         snapshot_token = begin_snapshot_capture(group)
         snapshot = current_snapshot_capture()
         if snapshot is not None:
             snapshot.snapshot_readback_required = True
+        selection_hook = Phase0BSourceSelectionHook(self, group, query_file)
         try:
-            legacy_result = await super().collect(group_id=group_id, query_file=query_file)
+            with selection_hook:
+                legacy_result = await super().collect(group_id=group_id, query_file=query_file)
+            selection_audit = selection_hook.audit
+            legacy_result["source_selection_policy_version"] = SOURCE_SELECTION_POLICY_VERSION
+            legacy_result["source_selection_audit"] = selection_audit
+            legacy_result["source_selection_policy_enabled"] = bool(selection_audit.get("enabled"))
+            legacy_result["freshness_sources_selected"] = sum(
+                str(item.get("selection_reason", "")) == "freshness_reserve"
+                for item in selection_audit.get("selected", ()) if isinstance(item, dict)
+            )
+
             snapshot = current_snapshot_capture()
             captured = tuple(snapshot.discoveries) if snapshot is not None else ()
             context = RunContext(
@@ -91,54 +75,40 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
                     now_bj=datetime.now(self.tz),
                 )
                 shadow_payload = report.as_dict()
-                expected_snapshot_count = int(
-                    legacy_result.get("discovery_snapshot_rows") or 0
-                )
-                persisted_snapshot_count = int(
-                    legacy_result.get("discovery_snapshot_persisted_rows") or 0
-                )
-                snapshot_readback_performed = bool(
-                    legacy_result.get("discovery_snapshot_readback_performed", False)
-                )
-                actual_snapshot_count = int(
-                    shadow_payload.get("discovery_snapshot_count") or 0
-                )
+                expected_snapshot_count = int(legacy_result.get("discovery_snapshot_rows") or 0)
+                persisted_snapshot_count = int(legacy_result.get("discovery_snapshot_persisted_rows") or 0)
+                snapshot_readback_performed = bool(legacy_result.get("discovery_snapshot_readback_performed", False))
+                actual_snapshot_count = int(shadow_payload.get("discovery_snapshot_count") or 0)
                 capture_gap_count = sum(
-                    str(item.get("prefilter_status", ""))
-                    == "acquired_without_snapshot_row"
-                    for item in shadow_payload.get("items", ())
-                    if isinstance(item, dict)
+                    str(item.get("prefilter_status", "")) == "acquired_without_snapshot_row"
+                    for item in shadow_payload.get("items", ()) if isinstance(item, dict)
                 )
-                snapshot_status = str(
-                    legacy_result.get("discovery_snapshot_status", "") or ""
-                )
-                shadow_payload.update(
-                    {
-                        "pipeline_version": PARALLEL_SHADOW_PIPELINE_VERSION,
-                        "control_version": LEGACY_CONTROL_VERSION,
-                        "snapshot_persistence_version": SNAPSHOT_PERSISTENCE_VERSION,
-                        "snapshot_capture_error": (
-                            snapshot.snapshot_error if snapshot is not None else ""
-                        ),
-                        "control_discovery_snapshot_count": expected_snapshot_count,
-                        "persisted_discovery_snapshot_count": persisted_snapshot_count,
-                        "snapshot_readback_performed": snapshot_readback_performed,
-                        "capture_gap_count": capture_gap_count,
-                        "full_snapshot_invariant": (
-                            snapshot_status == "success"
-                            and snapshot_readback_performed
-                            and expected_snapshot_count > 0
-                            and persisted_snapshot_count == expected_snapshot_count
-                            and actual_snapshot_count == expected_snapshot_count
-                            and capture_gap_count == 0
-                        ),
-                    }
-                )
-            except Exception as exc:  # shadow semantics must not take down control
+                snapshot_status = str(legacy_result.get("discovery_snapshot_status", "") or "")
+                shadow_payload.update({
+                    "pipeline_version": PARALLEL_SHADOW_PIPELINE_VERSION,
+                    "control_version": LEGACY_CONTROL_VERSION,
+                    "source_selection_policy_version": SOURCE_SELECTION_POLICY_VERSION,
+                    "snapshot_persistence_version": SNAPSHOT_PERSISTENCE_VERSION,
+                    "snapshot_capture_error": snapshot.snapshot_error if snapshot is not None else "",
+                    "control_discovery_snapshot_count": expected_snapshot_count,
+                    "persisted_discovery_snapshot_count": persisted_snapshot_count,
+                    "snapshot_readback_performed": snapshot_readback_performed,
+                    "capture_gap_count": capture_gap_count,
+                    "full_snapshot_invariant": (
+                        snapshot_status == "success"
+                        and snapshot_readback_performed
+                        and expected_snapshot_count > 0
+                        and persisted_snapshot_count == expected_snapshot_count
+                        and actual_snapshot_count == expected_snapshot_count
+                        and capture_gap_count == 0
+                    ),
+                })
+            except Exception as exc:
                 shadow_payload = {
                     "version": PARALLEL_SHADOW_VERSION,
                     "pipeline_version": PARALLEL_SHADOW_PIPELINE_VERSION,
                     "control_version": LEGACY_CONTROL_VERSION,
+                    "source_selection_policy_version": SOURCE_SELECTION_POLICY_VERSION,
                     "snapshot_persistence_version": SNAPSHOT_PERSISTENCE_VERSION,
                     "status": "failed_open",
                     "error": f"{type(exc).__name__}: {exc}"[:2000],
@@ -151,17 +121,12 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
             legacy_result["v06_shadow"] = shadow_payload
             legacy_result["v06_shadow_version"] = PARALLEL_SHADOW_PIPELINE_VERSION
             legacy_result["v06_shadow_control_version"] = LEGACY_CONTROL_VERSION
-            legacy_result["v06_shadow_snapshot_persistence_version"] = (
-                SNAPSHOT_PERSISTENCE_VERSION
-            )
+            legacy_result["v06_shadow_source_selection_policy_version"] = SOURCE_SELECTION_POLICY_VERSION
+            legacy_result["v06_shadow_snapshot_persistence_version"] = SNAPSHOT_PERSISTENCE_VERSION
             return legacy_result
         finally:
             end_snapshot_capture(snapshot_token)
             self._v06_acquired_pairs = []
 
 
-__all__ = [
-    "LEGACY_CONTROL_VERSION",
-    "PARALLEL_SHADOW_PIPELINE_VERSION",
-    "ParallelShadowCollectorPipeline",
-]
+__all__ = ["LEGACY_CONTROL_VERSION", "PARALLEL_SHADOW_PIPELINE_VERSION", "ParallelShadowCollectorPipeline"]
