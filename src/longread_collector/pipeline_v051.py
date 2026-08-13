@@ -120,6 +120,78 @@ def _count_firecrawl_scrapes_today_by_group(
 GoogleSheetStore.count_firecrawl_scrapes_today = _count_firecrawl_scrapes_today_by_group
 
 
+def _snapshot_persistence_audit(
+    values: dict[str, object],
+    state: Any | None,
+) -> dict[str, object]:
+    """Project snapshot persistence into the run ledger without a schema change.
+
+    Historical recall hooks expose an in-memory capture count and an optional
+    ``snapshot_error``. Phase 0A writers additionally expose a durable readback
+    count. A known write error always fails closed. When durable readback was
+    performed, an expected/persisted count mismatch also fails closed.
+    """
+
+    if state is None:
+        return {
+            "status": "unavailable",
+            "expected_rows": 0,
+            "persisted_rows": "",
+            "readback_performed": False,
+            "error": "snapshot capture state unavailable",
+        }
+
+    expected_rows = len(state.discoveries)
+    readback_performed = bool(
+        getattr(state, "snapshot_readback_performed", False)
+    )
+    persisted_raw = getattr(state, "snapshot_persisted_rows", "")
+    persisted_rows = int(persisted_raw or 0) if readback_performed else ""
+    error = str(getattr(state, "snapshot_error", "") or "")
+
+    if readback_performed and not error and persisted_rows != expected_rows:
+        error = (
+            "SnapshotPersistenceInvariantError: durable readback mismatch: "
+            f"expected={expected_rows} persisted={persisted_rows}"
+        )
+        state.snapshot_error = error
+
+    if error:
+        status = "failed"
+    elif readback_performed:
+        status = "success"
+    else:
+        status = "unverified"
+
+    marker = (
+        f"snapshot_persistence_status={status}; "
+        f"snapshot_expected_rows={expected_rows}; "
+        f"snapshot_persisted_rows={persisted_rows}; "
+        f"snapshot_readback_performed={str(readback_performed).upper()}"
+    )
+    notes = str(values.get("notes", "") or "")
+    if "snapshot_persistence_status=" not in notes:
+        values["notes"] = f"{notes}; {marker}" if notes else marker
+
+    if status == "failed":
+        values["final_status"] = "failed"
+        previous_error = str(values.get("error_message", "") or "")
+        snapshot_message = error[:1500]
+        values["error_message"] = (
+            f"{previous_error}; {snapshot_message}".strip("; ")
+            if previous_error
+            else snapshot_message
+        )
+
+    return {
+        "status": status,
+        "expected_rows": expected_rows,
+        "persisted_rows": persisted_rows,
+        "readback_performed": readback_performed,
+        "error": error,
+    }
+
+
 class NativeCollectorPipeline(_pipeline_v05.NativeCollectorPipeline):
     """Run v0.5.3 while preserving immutable discovery and operational evidence."""
 
@@ -183,6 +255,7 @@ class NativeCollectorPipeline(_pipeline_v05.NativeCollectorPipeline):
             values["fallback_group_remaining"] = int(
                 values.get("fallback_remaining") or 0
             )
+            _snapshot_persistence_audit(values, current_snapshot_capture())
             original_append(values)
 
         self.store.count_firecrawl_scrapes_today = budgeted_count
@@ -192,13 +265,18 @@ class NativeCollectorPipeline(_pipeline_v05.NativeCollectorPipeline):
         try:
             result = await super().collect(group_id=group_id, query_file=query_file)
             state = current_snapshot_capture()
+            audit = _snapshot_persistence_audit(result, state)
             if state is not None:
-                result["discovery_snapshot_rows"] = len(state.discoveries)
-                result["discovery_snapshot_status"] = (
-                    "failed" if state.snapshot_error else "success"
-                )
-                if state.snapshot_error:
-                    result["discovery_snapshot_error"] = state.snapshot_error
+                result["discovery_snapshot_rows"] = int(audit["expected_rows"])
+                result["discovery_snapshot_persisted_rows"] = audit[
+                    "persisted_rows"
+                ]
+                result["discovery_snapshot_readback_performed"] = audit[
+                    "readback_performed"
+                ]
+                result["discovery_snapshot_status"] = audit["status"]
+                if audit["error"]:
+                    result["discovery_snapshot_error"] = audit["error"]
             result.update(schedule)
             result["fallback_group_cap"] = allocation.group_cap
             result["fallback_group_used_before"] = allocation.group_used
@@ -208,3 +286,6 @@ class NativeCollectorPipeline(_pipeline_v05.NativeCollectorPipeline):
             _CURRENT_GROUP.reset(group_token)
             self.store.count_firecrawl_scrapes_today = original_count
             self.store.append_collector_run = original_append
+
+
+__all__ = ["NativeCollectorPipeline", "_snapshot_persistence_audit"]
