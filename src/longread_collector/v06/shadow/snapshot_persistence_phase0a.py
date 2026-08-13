@@ -7,7 +7,9 @@ must contain exactly the expected number of rows for the current collector run.
 
 This module changes no Discovery, Acquisition, L4, L5 or L6 semantics. It adds
 only persistence verification and audit state used by the scheduled shadow
-control plane.
+control plane. The installed recall writer remains the PR-7.3.8 function itself;
+Phase 0A attaches an opt-in post-persistence verifier so historical writer
+identity/version contracts remain intact.
 """
 
 from __future__ import annotations
@@ -16,9 +18,7 @@ from typing import Any
 
 from ... import recall_instrumentation as _recall
 from ...models import DiscoveredURL, ExtractedArticle
-from .snapshot_persistence_v0738 import (
-    hardened_append_snapshot_rows as _pr738_append_snapshot_rows,
-)
+from . import snapshot_persistence_v0738 as _pr738
 
 SNAPSHOT_PERSISTENCE_VERSION = "snapshot-persistence-v0.6-phase0a"
 _INSTALLED = False
@@ -35,31 +35,23 @@ def _persisted_run_row_count(ws: Any, run_id: str) -> int:
     return sum(str(value).strip() == run_id for value in values[1:])
 
 
-def verified_append_snapshot_rows(
-    store: Any,
+def _verify_persisted_snapshot(
     *,
+    store: Any,
     run_id: str,
-    pair_list: list[tuple[DiscoveredURL, ExtractedArticle]],
     state: _recall.SnapshotCaptureState,
+    written_rows: int,
 ) -> int:
-    """Persist with PR-7.3.8, then fail closed on durable readback mismatch."""
+    """Fail closed unless writer count and durable readback equal capture count."""
 
     expected_rows = len(state.discoveries)
-    # These attributes are intentionally sidecar-only and do not alter the
-    # persisted Sheet schema or the historical SnapshotCaptureState contract.
     state.snapshot_readback_performed = True
     state.snapshot_persisted_rows = 0
 
-    written = _pr738_append_snapshot_rows(
-        store,
-        run_id=run_id,
-        pair_list=pair_list,
-        state=state,
-    )
-    if written != expected_rows:
+    if written_rows != expected_rows:
         raise SnapshotPersistenceInvariantError(
             "snapshot writer count mismatch: "
-            f"run_id={run_id} expected={expected_rows} writer_returned={written}"
+            f"run_id={run_id} expected={expected_rows} writer_returned={written_rows}"
         )
 
     ws = _recall._ensure_snapshot_sheet(store)
@@ -73,13 +65,37 @@ def verified_append_snapshot_rows(
     return persisted_rows
 
 
+def verified_append_snapshot_rows(
+    store: Any,
+    *,
+    run_id: str,
+    pair_list: list[tuple[DiscoveredURL, ExtractedArticle]],
+    state: _recall.SnapshotCaptureState,
+) -> int:
+    """Direct helper used by regression tests; production uses the PR-7.3.8 hook."""
+
+    written = _pr738.hardened_append_snapshot_rows(
+        store,
+        run_id=run_id,
+        pair_list=pair_list,
+        state=state,
+    )
+    return _verify_persisted_snapshot(
+        store=store,
+        run_id=run_id,
+        state=state,
+        written_rows=written,
+    )
+
+
 def install_snapshot_persistence_invariant() -> None:
-    """Install Phase 0A verification over the frozen PR-7.3.8 writer."""
+    """Install PR-7.3.8 persistence plus the Phase 0A opt-in verifier."""
 
     global _INSTALLED
     if _INSTALLED:
         return
-    _recall._append_snapshot_rows = verified_append_snapshot_rows
+    _pr738.install_snapshot_persistence_hardening()
+    _pr738.install_post_persistence_verifier(_verify_persisted_snapshot)
     _INSTALLED = True
 
 
