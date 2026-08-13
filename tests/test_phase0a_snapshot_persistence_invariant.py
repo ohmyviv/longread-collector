@@ -21,6 +21,11 @@ class _FakeWorksheet:
     def col_values(self, index: int):
         return [row[index - 1] if len(row) >= index else "" for row in self.rows]
 
+    def row_values(self, index: int):
+        if 1 <= index <= len(self.rows):
+            return list(self.rows[index - 1])
+        return []
+
 
 class _FakeBook:
     def __init__(self, ws: _FakeWorksheet) -> None:
@@ -54,66 +59,73 @@ def _state(count: int = 2) -> SnapshotCaptureState:
     return SnapshotCaptureState(query_group="pre_report", discoveries=discoveries)
 
 
-def test_verified_writer_records_exact_durable_readback(monkeypatch: pytest.MonkeyPatch) -> None:
+def _append_run_rows(ws: _FakeWorksheet, run_id: str, count: int) -> None:
+    for index in range(count):
+        row = [""] * len(SNAPSHOT_HEADERS)
+        row[0] = f"snapshot-{index}"
+        row[1] = run_id
+        ws.rows.append(row)
+
+
+def test_verifier_records_exact_durable_readback() -> None:
     ws = _FakeWorksheet()
     store = _FakeStore(ws)
     state = _state(2)
     run_id = "COL-PHASE0A-SUCCESS"
+    _append_run_rows(ws, run_id, 2)
 
-    def fake_pr738(store, *, run_id, pair_list, state):
-        for index in range(len(state.discoveries)):
-            row = [""] * len(SNAPSHOT_HEADERS)
-            row[0] = f"snapshot-{index}"
-            row[1] = run_id
-            store.book.ws.rows.append(row)
-        return len(state.discoveries)
-
-    monkeypatch.setattr(phase0a, "_pr738_append_snapshot_rows", fake_pr738)
-
-    written = phase0a.verified_append_snapshot_rows(
-        store,
+    persisted = phase0a._verify_persisted_snapshot(
+        store=store,
         run_id=run_id,
-        pair_list=[],
         state=state,
+        written_rows=2,
     )
 
-    assert written == 2
+    assert persisted == 2
     assert state.snapshot_readback_performed is True
     assert state.snapshot_persisted_rows == 2
 
 
-def test_verified_writer_raises_when_durable_rows_are_missing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_verifier_raises_when_durable_rows_are_missing() -> None:
     ws = _FakeWorksheet()
     store = _FakeStore(ws)
     state = _state(2)
     run_id = "COL-PHASE0A-MISSING"
-
-    def fake_pr738(store, *, run_id, pair_list, state):
-        row = [""] * len(SNAPSHOT_HEADERS)
-        row[0] = "snapshot-only-one"
-        row[1] = run_id
-        store.book.ws.rows.append(row)
-        # Simulate an API path that reports the expected writer count although
-        # durable readback can see only one row.
-        return len(state.discoveries)
-
-    monkeypatch.setattr(phase0a, "_pr738_append_snapshot_rows", fake_pr738)
+    _append_run_rows(ws, run_id, 1)
 
     with pytest.raises(
         phase0a.SnapshotPersistenceInvariantError,
         match=r"expected=2 persisted=1",
     ):
-        phase0a.verified_append_snapshot_rows(
-            store,
+        phase0a._verify_persisted_snapshot(
+            store=store,
             run_id=run_id,
-            pair_list=[],
             state=state,
+            written_rows=2,
         )
 
     assert state.snapshot_readback_performed is True
     assert state.snapshot_persisted_rows == 1
+
+
+def test_verifier_raises_when_writer_return_count_is_wrong() -> None:
+    ws = _FakeWorksheet()
+    store = _FakeStore(ws)
+    state = _state(2)
+
+    with pytest.raises(
+        phase0a.SnapshotPersistenceInvariantError,
+        match=r"expected=2 writer_returned=1",
+    ):
+        phase0a._verify_persisted_snapshot(
+            store=store,
+            run_id="COL-PHASE0A-WRITER-MISMATCH",
+            state=state,
+            written_rows=1,
+        )
+
+    assert state.snapshot_readback_performed is True
+    assert state.snapshot_persisted_rows == 0
 
 
 def test_run_audit_fails_closed_on_snapshot_error() -> None:
