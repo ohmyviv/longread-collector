@@ -1,17 +1,10 @@
-"""Phase 0B source-selection wrapper over the frozen v0.5.6m control path.
-
-The wrapper changes only which registered sources occupy the existing native
-source-scan slots when the opt-in freshness policy is enabled. Downstream
-v0.5.6m extraction/classification semantics remain unchanged.
-"""
+"""Scoped Phase 0B scheduling helper for one Collector control run."""
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from . import pipeline_v05 as _pipeline_v05
-from .pipeline_v056f import NativeCollectorPipeline as _BasePipeline
 from .runtime_config import load_collector_runtime_config
 from .source_selection_phase0b import (
     SOURCE_SELECTION_POLICY_VERSION,
@@ -22,11 +15,17 @@ from .source_selection_phase0b import (
     selection_audit_payload,
 )
 
-# pipeline_v05 resolves this module global when each run selects native sources.
-# v0.5.3 previously pointed it at the known-source-fix selector; this Phase 0B
-# selector preserves that fix layer internally and adds an opt-in scheduling
-# policy on top.
-_pipeline_v05.select_sources_for_run = select_sources_for_run
+
+def _disabled_audit(group_id: str) -> dict[str, Any]:
+    return {
+        "version": SOURCE_SELECTION_POLICY_VERSION,
+        "enabled": False,
+        "group_id": group_id,
+        "freshness_source_ids": [],
+        "freshness_max_sources": 0,
+        "selected": [],
+        "missing_freshness_source_ids": [],
+    }
 
 
 def _compact_selection_marker(audit: dict[str, Any]) -> str:
@@ -40,11 +39,11 @@ def _compact_selection_marker(audit: dict[str, Any]) -> str:
     missing = [str(value) for value in audit.get("missing_freshness_source_ids") or []]
     detail = []
     for item in selected:
-        source_id = str(item.get("source_id", ""))
-        reason = str(item.get("selection_reason", ""))
         age = item.get("scan_age_hours")
-        age_text = "na" if age is None else str(age)
-        detail.append(f"{source_id}:{reason}:{age_text}")
+        detail.append(
+            f"{item.get('source_id', '')}:{item.get('selection_reason', '')}:"
+            f"{'na' if age is None else age}"
+        )
     return (
         f"source_selection_policy_version={SOURCE_SELECTION_POLICY_VERSION}; "
         f"source_selection_policy_enabled={str(bool(audit.get('enabled'))).upper()}; "
@@ -56,63 +55,80 @@ def _compact_selection_marker(audit: dict[str, Any]) -> str:
     )
 
 
-class NativeCollectorPipeline(_BasePipeline):
-    """Run frozen v0.5.6m semantics with opt-in Phase 0B source scheduling."""
+class Phase0BSourceSelectionHook:
+    def __init__(self, pipeline: object, group_id: str, query_file: object = None) -> None:
+        self.pipeline = pipeline
+        self.group_id = group_id
+        self.query_file = query_file
+        self.audit = _disabled_audit(group_id)
+        self._token = None
+        self._old_selector = None
+        self._old_append = None
 
-    async def collect(
-        self,
-        group_id: str | None = None,
-        query_file: Path | None = None,
-    ) -> dict[str, Any]:
-        group = str(group_id or "all")
-        runtime = load_collector_runtime_config(self.store)
-        source_ids = tuple(runtime.native_freshness_sources_by_group.get(group, ()))
+    def __enter__(self):
+        store = getattr(self.pipeline, "store", None)
+        if store is None:
+            return self
+        runtime = load_collector_runtime_config(store)
+        source_ids = tuple(runtime.native_freshness_sources_by_group.get(self.group_id, ()))
         policy = SourceFreshnessPolicy(
             enabled=(
-                query_file is None
+                self.query_file is None
                 and runtime.native_freshness_policy_enabled
                 and bool(source_ids)
                 and runtime.native_freshness_max_per_run > 0
             ),
-            group_id=group,
+            group_id=self.group_id,
             freshness_source_ids=source_ids,
             freshness_max_sources=min(
                 runtime.native_freshness_max_per_run,
                 runtime.native_source_scans_per_run,
             ),
         )
+        self.audit = {
+            "version": SOURCE_SELECTION_POLICY_VERSION,
+            "enabled": policy.enabled,
+            "group_id": policy.group_id,
+            "freshness_source_ids": list(policy.freshness_source_ids),
+            "freshness_max_sources": policy.freshness_max_sources,
+            "selected": [],
+            "missing_freshness_source_ids": [],
+        }
+        if not policy.enabled:
+            return self
 
-        token = begin_source_selection(policy)
-        original_append = self.store.append_collector_run
+        self._token = begin_source_selection(policy)
+        self._old_selector = _pipeline_v05.select_sources_for_run
+        _pipeline_v05.select_sources_for_run = select_sources_for_run
+        old_append = getattr(store, "append_collector_run", None)
+        if callable(old_append):
+            self._old_append = old_append
 
-        def append_with_selection_audit(values: dict[str, object]) -> None:
-            audit = selection_audit_payload()
-            marker = _compact_selection_marker(audit)
-            notes = str(values.get("notes", "") or "")
-            if "source_selection_policy_version=" not in notes:
+            def audited_append(values: dict[str, object]) -> None:
+                audit = selection_audit_payload()
+                notes = str(values.get("notes", "") or "")
+                marker = _compact_selection_marker(audit)
                 values["notes"] = f"{notes}; {marker}" if notes else marker
-            original_append(values)
+                old_append(values)
 
-        self.store.append_collector_run = append_with_selection_audit
-        try:
-            result = await super().collect(group_id=group_id, query_file=query_file)
-            audit = selection_audit_payload()
-            result["source_selection_policy_version"] = SOURCE_SELECTION_POLICY_VERSION
-            result["source_selection_audit"] = audit
-            result["source_selection_policy_enabled"] = bool(audit.get("enabled"))
-            result["freshness_sources_selected"] = sum(
-                str(item.get("selection_reason", "")) == "freshness_reserve"
-                for item in audit.get("selected", ())
-                if isinstance(item, dict)
-            )
-            return result
-        finally:
-            self.store.append_collector_run = original_append
-            end_source_selection(token)
+            store.append_collector_run = audited_append
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self._token is None:
+            return None
+        self.audit = selection_audit_payload()
+        store = getattr(self.pipeline, "store", None)
+        if store is not None and self._old_append is not None:
+            store.append_collector_run = self._old_append
+        if self._old_selector is not None:
+            _pipeline_v05.select_sources_for_run = self._old_selector
+        end_source_selection(self._token)
+        return None
 
 
 __all__ = [
-    "NativeCollectorPipeline",
+    "Phase0BSourceSelectionHook",
     "SOURCE_SELECTION_POLICY_VERSION",
     "_compact_selection_marker",
 ]
