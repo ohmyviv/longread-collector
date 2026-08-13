@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from longread_collector.known_source_fixes import select_sources_for_run as legacy_selector
+from longread_collector.runtime_config import load_collector_runtime_config
 from longread_collector.source_selection_phase0b import (
     SourceFreshnessPolicy,
     begin_source_selection,
@@ -119,3 +120,59 @@ def test_context_resets():
     token = begin_source_selection(SourceFreshnessPolicy(enabled=True, freshness_source_ids=("x",), freshness_max_sources=1))
     end_source_selection(token)
     assert selection_audit_payload()["enabled"] is False
+
+
+class FakeWorksheet:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def get_all_records(self):
+        return list(self.rows)
+
+
+class FakeBook:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def worksheet(self, name):
+        assert name == "collector_config"
+        return FakeWorksheet(self.rows)
+
+
+class FakeStore:
+    def __init__(self, rows):
+        self.book = FakeBook(rows)
+
+
+def cfg(key, value):
+    return {"config_key": key, "value": value, "status": "active"}
+
+
+def test_phase0b_runtime_config_defaults_disabled():
+    runtime = load_collector_runtime_config(FakeStore([]))
+    assert runtime.native_freshness_policy_enabled is False
+    assert runtime.native_freshness_max_per_run == 0
+    assert runtime.native_freshness_sources_by_group == {}
+
+
+def test_phase0b_runtime_config_parses_group_mapping():
+    runtime = load_collector_runtime_config(FakeStore([
+        cfg("native_source_scans_per_run", 8),
+        cfg("native_freshness_policy_enabled", "TRUE"),
+        cfg("native_freshness_max_per_run", 6),
+        cfg("native_freshness_sources_by_group", '{"pre_report":["wired","newyorker","wired"],"zh_evening":"yicai|jiemian-depth"}'),
+    ]))
+    assert runtime.native_freshness_policy_enabled is True
+    assert runtime.native_freshness_max_per_run == 6
+    assert runtime.native_freshness_sources_by_group == {
+        "pre_report": ("wired", "newyorker"),
+        "zh_evening": ("yicai", "jiemian-depth"),
+    }
+
+
+def test_invalid_phase0b_group_mapping_returns_empty():
+    runtime = load_collector_runtime_config(FakeStore([
+        cfg("native_freshness_policy_enabled", "TRUE"),
+        cfg("native_freshness_sources_by_group", "not-json"),
+    ]))
+    assert runtime.native_freshness_sources_by_group == {}
