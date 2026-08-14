@@ -36,7 +36,8 @@ jobs:
           pytest -q
           tests/test_final_recall_audit.py
           tests/test_final_recall_audit_v11.py
-          tests/test_final_recall_workflow_v11.py
+          tests/test_final_recall_audit_v12.py
+          tests/test_final_recall_workflow_v12.py
           tests/test_native_discovery_v05.py
           tests/test_known_source_fixes.py
 
@@ -58,7 +59,7 @@ jobs:
           test -n "$GOOGLE_SERVICE_ACCOUNT_JSON_B64"
           echo "$GOOGLE_SERVICE_ACCOUNT_JSON_B64" | base64 -d > /tmp/google-service-account.json
           chmod 600 /tmp/google-service-account.json
-      - name: Audit final recommendation recall v1.1
+      - name: Audit final recommendation recall v1.2
         env:
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
           GOOGLE_SHEET_ID: 1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4
@@ -81,24 +82,33 @@ jobs:
           args=(
             --report-date "$report_date"
             --cutoff-time 07:35
-            --lookback-hours 48
+            --max-observation-days 14
           )
           if [ "$mode" = "dry_run" ]; then
             args+=(--dry-run)
           fi
           for attempt in 1 2 3; do
-            if python -m longread_collector.final_recall_audit_v11_runner "${args[@]}" \
-              > artifacts/final-recall-audit-v11-summary.json; then
-              cat artifacts/final-recall-audit-v11-summary.json
+            if python -m longread_collector.final_recall_audit_v12_runner "${args[@]}" \
+              > artifacts/final-recall-audit-v12-summary.json; then
+              cat artifacts/final-recall-audit-v12-summary.json
               break
             fi
             if [ "$attempt" -eq 3 ]; then
               exit 1
             fi
-            echo "Recall audit v1.1 failed; waiting for the Sheets quota window (attempt $attempt/3)."
+            echo "Recall audit v1.2 failed with a retryable execution error (attempt $attempt/3); waiting before bounded retry."
             sleep 95
           done
-      - name: Verify v1.1 Sheet write
+          audit_status="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          summary = json.loads(Path('artifacts/final-recall-audit-v12-summary.json').read_text(encoding='utf-8'))
+          print(summary.get('audit_status', 'complete'))
+          PY
+          )"
+          echo "AUDIT_STATUS=$audit_status" >> "$GITHUB_ENV"
+          echo "Resolved audit_status=$audit_status"
+      - name: Verify v1.2 Sheet write
         env:
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
           GOOGLE_SHEET_ID: 1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4
@@ -107,6 +117,10 @@ jobs:
         run: |
           if [ "$EFFECTIVE_MODE" != "write_to_sheets" ]; then
             echo "Dry-run mode selected; write verification skipped."
+            exit 0
+          fi
+          if [ "$AUDIT_STATUS" = "no_final_items" ]; then
+            echo "No auditable final_items for $RESOLVED_REPORT_DATE; scheduled audit skipped without retry/write."
             exit 0
           fi
           python - <<'PY'
@@ -118,18 +132,18 @@ jobs:
 
           report_date = os.environ["RESOLVED_REPORT_DATE"]
           store = GoogleSheetStore(get_settings())
-          daily_rows = store.book.worksheet("final_recall_daily_v11").get_all_records()
+          daily_rows = store.book.worksheet("final_recall_daily_v12").get_all_records()
           matching_daily = [
               row for row in daily_rows
               if str(row.get("report_date", "")).strip() == report_date
           ]
           if not matching_daily:
               raise SystemExit(
-                  f"Write verification failed: final_recall_daily_v11 has no {report_date} row"
+                  f"Write verification failed: final_recall_daily_v12 has no {report_date} row"
               )
 
           summary = matching_daily[-1]
-          audit_rows = store.book.worksheet("final_recall_audit_v11").get_all_records()
+          audit_rows = store.book.worksheet("final_recall_audit_v12").get_all_records()
           matching_items = [
               row for row in audit_rows
               if str(row.get("report_date", "")).strip() == report_date
@@ -145,13 +159,15 @@ jobs:
               "daily_row_present": True,
               "detail_rows": len(matching_items),
               "final_run_id": summary.get("final_run_id", ""),
+              "strict_effective_route_denominator": summary.get("strict_effective_route_denominator", ""),
+              "measurement_version": summary.get("measurement_version", ""),
           }, ensure_ascii=False, indent=2))
           PY
       - name: Upload audit evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: final-recall-audit-v11-${{ github.run_id }}
+          name: final-recall-audit-v12-${{ github.run_id }}
           path: artifacts/
           if-no-files-found: warn
           retention-days: 7
