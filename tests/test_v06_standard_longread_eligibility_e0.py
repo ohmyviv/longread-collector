@@ -151,7 +151,7 @@ def test_negative_length_measurement_is_rejected_as_invalid_evidence():
         raise AssertionError("negative length evidence must fail")
 
 
-def test_replay_summary_separates_asset_capture_from_hit_loss():
+def test_replay_summary_separates_asset_resolution_routing_and_hit_loss():
     rows = [
         EligibilityReplayRow(
             review_id="hit-1",
@@ -188,11 +188,51 @@ def test_replay_summary_separates_asset_capture_from_hit_loss():
     assert summary.hit_lost_from_standard == 0
     assert summary.known_hit_loss_rate == 0.0
     assert summary.wrong_medium_asset_count == 3
-    assert summary.wrong_medium_asset_removed_from_standard == 3
+    assert summary.wrong_medium_asset_resolved_nonstandard == 3
     assert summary.wrong_medium_asset_kept_standard == 0
+    assert summary.wrong_medium_asset_unknown == 0
+    assert summary.wrong_medium_asset_correctly_dispositioned == 3
     assert summary.wrong_medium_asset_capture_rate == 1.0
+    assert summary.wrong_medium_asset_correct_disposition_rate == 1.0
     assert summary.route_special_count == 1
     assert summary.ineligible_standard_count == 2
+
+
+def test_replay_unknown_is_not_counted_as_wrong_medium_asset_capture():
+    summary = summarize_eligibility_replay(
+        [
+            EligibilityReplayRow(
+                review_id="paper-unresolved",
+                review_label="不应推荐",
+                attribution_bucket="upstream_eligibility",
+                failure_subtype="academic_paper",
+                disposition=StandardLongreadDisposition.UNKNOWN,
+            )
+        ]
+    )
+    assert summary.wrong_medium_asset_count == 1
+    assert summary.wrong_medium_asset_resolved_nonstandard == 0
+    assert summary.wrong_medium_asset_unknown == 1
+    assert summary.wrong_medium_asset_capture_rate == 0.0
+    assert summary.wrong_medium_asset_correct_disposition_rate == 0.0
+
+
+def test_replay_resolved_but_wrong_route_is_not_correct_disposition():
+    summary = summarize_eligibility_replay(
+        [
+            EligibilityReplayRow(
+                review_id="paper-wrong-route",
+                review_label="不应推荐",
+                attribution_bucket="upstream_eligibility",
+                failure_subtype="academic_paper",
+                disposition=StandardLongreadDisposition.INELIGIBLE_STANDARD,
+            )
+        ]
+    )
+    assert summary.wrong_medium_asset_resolved_nonstandard == 1
+    assert summary.wrong_medium_asset_capture_rate == 1.0
+    assert summary.wrong_medium_asset_correctly_dispositioned == 0
+    assert summary.wrong_medium_asset_correct_disposition_rate == 0.0
 
 
 def test_replay_marks_noneligible_hit_as_explicit_loss():
