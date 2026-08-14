@@ -12,6 +12,9 @@ from longread_collector.final_recall_audit_v12 import (
     _track_window_status,
     no_final_items_summary,
 )
+from longread_collector.final_recall_audit_v12_runner import (
+    phase0a_guarded_observation_coverage_status,
+)
 
 TZ = ZoneInfo("Asia/Shanghai")
 CUTOFF = datetime(2026, 8, 12, 7, 35, tzinfo=TZ)
@@ -84,6 +87,30 @@ def test_preinstrumentation_item_is_partial_and_excluded_from_strict_denominator
 
     assert coverage == "partial"
     assert _measurement_denominator_status(row) == "partial_observation"
+
+
+def test_pre_phase0a_window_stays_partial_even_when_raw_snapshots_exist() -> None:
+    cutoff = datetime(2026, 8, 15, 7, 35, tzinfo=TZ)
+    coverage = phase0a_guarded_observation_coverage_status(
+        datetime(2026, 8, 13, 10, 0, tzinfo=TZ),
+        datetime(2026, 7, 31, 14, 40, 35, tzinfo=TZ),
+        cutoff,
+        "valid",
+    )
+
+    assert coverage == "partial"
+
+
+def test_post_phase0a_window_can_enter_strict_coverage() -> None:
+    cutoff = datetime(2026, 8, 15, 7, 35, tzinfo=TZ)
+    coverage = phase0a_guarded_observation_coverage_status(
+        datetime(2026, 8, 14, 0, 0, tzinfo=TZ),
+        datetime(2026, 7, 31, 14, 40, 35, tzinfo=TZ),
+        cutoff,
+        "valid",
+    )
+
+    assert coverage == "full"
 
 
 def test_strict_summary_counts_only_full_effective_route_measurement_rows() -> None:
