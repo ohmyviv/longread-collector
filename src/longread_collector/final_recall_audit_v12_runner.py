@@ -8,6 +8,10 @@ from . import final_recall_audit_v11 as audit_v11
 from . import final_recall_audit_v12 as audit_v12
 from .registry_matching_v056 import match_registry
 
+# Freeze the unpatched helper before main() installs the production guard. This
+# avoids recursive self-calls if main() is invoked after module import.
+_BASE_OBSERVATION_COVERAGE_STATUS = audit_v12._observation_coverage_status
+
 # Phase 0A's first naturally accepted run is the earliest point at which the
 # project has positive evidence for durable full-snapshot persistence/readback.
 # Older immutable snapshot rows remain useful diagnostic history, but they must
@@ -22,7 +26,7 @@ def phase0a_guarded_observation_coverage_status(
     cutoff: datetime,
     validity: str,
 ) -> str:
-    base_status = audit_v12._observation_coverage_status(
+    base_status = _BASE_OBSERVATION_COVERAGE_STATUS(
         observation_start,
         snapshot_coverage_start,
         cutoff,
