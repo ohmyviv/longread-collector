@@ -2,18 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+import multiprocessing
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
-
-from longread_collector import (
-    pipeline_phase0b,
-    pipeline_v05,
-    pipeline_v051,
-    pipeline_v055,
-    pipeline_v056e,
-)
-from longread_collector.sheets import RUN_HEADERS
-from longread_collector.v06.shadow.pipeline import ParallelShadowCollectorPipeline
 
 
 class RunWorksheet:
@@ -101,19 +92,32 @@ def _sources():
     ]
 
 
-def test_scheduled_v06_path_persists_phase0b_marker_through_v056b_direct_sink(monkeypatch) -> None:
+def _exercise_scheduled_v06_path() -> None:
+    # Import release modules only inside a spawned child process. Several legacy
+    # modules intentionally install process-global compatibility hooks at import
+    # time; isolating this integration regression prevents test-order pollution.
+    from longread_collector import (
+        pipeline_phase0b,
+        pipeline_v05,
+        pipeline_v051,
+        pipeline_v055,
+        pipeline_v056e,
+    )
+    from longread_collector.sheets import RUN_HEADERS
+    from longread_collector.v06.shadow.pipeline import ParallelShadowCollectorPipeline
+
     runtime = _runtime()
     allocation = _allocation()
 
-    monkeypatch.setattr(pipeline_phase0b, "load_collector_runtime_config", lambda store: runtime)
-    monkeypatch.setattr(pipeline_v051, "load_collector_runtime_config", lambda store: runtime)
-    monkeypatch.setattr(pipeline_v055, "load_collector_runtime_config", lambda store: runtime)
-    monkeypatch.setattr(pipeline_v056e, "load_collector_runtime_config", lambda store: runtime)
-    monkeypatch.setattr(pipeline_v051, "allocate_fallback_budget", lambda store, cfg, group: allocation)
-    monkeypatch.setattr(pipeline_v055, "allocate_fallback_budget", lambda store, cfg, group: allocation)
-    monkeypatch.setattr(pipeline_v056e, "allocate_fallback_budget", lambda store, cfg, group: allocation)
-    monkeypatch.setattr(pipeline_v051, "scheduled_run_metrics", _schedule)
-    monkeypatch.setattr(pipeline_v056e, "scheduled_run_metrics", _schedule)
+    pipeline_phase0b.load_collector_runtime_config = lambda store: runtime
+    pipeline_v051.load_collector_runtime_config = lambda store: runtime
+    pipeline_v055.load_collector_runtime_config = lambda store: runtime
+    pipeline_v056e.load_collector_runtime_config = lambda store: runtime
+    pipeline_v051.allocate_fallback_budget = lambda store, cfg, group: allocation
+    pipeline_v055.allocate_fallback_budget = lambda store, cfg, group: allocation
+    pipeline_v056e.allocate_fallback_budget = lambda store, cfg, group: allocation
+    pipeline_v051.scheduled_run_metrics = _schedule
+    pipeline_v056e.scheduled_run_metrics = _schedule
 
     async def fake_base_collect(self, group_id=None, query_file=None):
         selected = pipeline_v05.select_sources_for_run(
@@ -134,7 +138,7 @@ def test_scheduled_v06_path_persists_phase0b_marker_through_v056b_direct_sink(mo
         self.store.append_collector_run(values)
         return dict(values)
 
-    monkeypatch.setattr(pipeline_v05.NativeCollectorPipeline, "collect", fake_base_collect)
+    pipeline_v05.NativeCollectorPipeline.collect = fake_base_collect
 
     pipeline = ParallelShadowCollectorPipeline.__new__(ParallelShadowCollectorPipeline)
     pipeline.store = Store()
@@ -181,3 +185,16 @@ def test_scheduled_v06_path_persists_phase0b_marker_through_v056b_direct_sink(mo
     assert sum(item["selection_reason"] == "freshness_reserve" for item in audit["selected"]) == 6
     assert sum(item["selection_reason"] == "coverage_rotation" for item in audit["selected"]) == 2
     assert all(item["scan_age_hours"] is not None for item in audit["selected"])
+
+
+def test_scheduled_v06_path_persists_phase0b_marker_through_v056b_direct_sink() -> None:
+    process = multiprocessing.get_context("spawn").Process(
+        target=_exercise_scheduled_v06_path
+    )
+    process.start()
+    process.join(timeout=30)
+    if process.is_alive():
+        process.terminate()
+        process.join()
+        raise AssertionError("isolated Phase 0B integration regression timed out")
+    assert process.exitcode == 0
