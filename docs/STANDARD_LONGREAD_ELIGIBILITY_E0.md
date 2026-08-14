@@ -57,18 +57,21 @@ The historical field `body_chars_read` has no active configuration contract prov
 `eligibility_replay.py` intentionally has no Sheets/network dependency. A caller supplies human review rows plus candidate dispositions. The replay reports separately:
 
 - known-Hit loss from Standard Longread;
-- wrong-medium/asset capture;
+- wrong-medium/asset rows correctly resolved away from Standard Longread;
+- wrong-medium/asset rows that remain `unknown` rather than being falsely counted as capture;
+- subtype-correct disposition, so academic papers must route special while videos/briefings become standard-ineligible;
 - special routing count;
 - hard ineligible count;
-- unknown count.
+- total unknown count.
 
 For the high-confidence wrong-medium/asset family, the intended acceptance gate is:
 
-1. all reviewed video/briefing/paper failures are removed from `eligible_standard`;
-2. known Standard Longread Hits are not lost because of those rules;
-3. papers are routed, not treated as low-quality media articles;
-4. written articles with embedded videos remain written articles if L4 resolved them as such;
-5. no source-wide blacklist is introduced.
+1. all reviewed video/briefing/paper failures are factually resolved away from `eligible_standard`; `unknown` does not count as successful capture;
+2. academic papers are `route_special`, while resolved video pages and recurring briefings are `ineligible_standard`;
+3. known Standard Longread Hits are not lost because of those rules;
+4. papers are routed, not treated as low-quality media articles;
+5. written articles with embedded videos remain written articles if L4 resolved them as such;
+6. no source-wide blacklist is introduced.
 
 Length is a separate measurement-first track. Any future threshold proposal must publish human-short capture versus known-Hit loss and require near-zero known-Hit loss for a hard reject.
 
@@ -78,4 +81,8 @@ Length is a separate measurement-first track. Any future threshold proposal must
 - **E2:** define substantive-length semantics and structural adequacy; distinguish literal shortness from perceived thinness/depth inadequacy.
 - **L5.1:** only after the eligibility boundary is accepted, offline-evaluate narrow `depth floor` and `newsiness penalty` changes on the 55 editorial-evaluable human items.
 
-All existing natural acceptance gates remain in force. Phase0B patched `pre_report` must reach formal natural acceptance before Phase0C, and LR-v3.5.1 still requires its first re-enabled 07:35 scheduled natural acceptance.
+## Current natural-gate state
+
+Phase0B patched `pre_report` reached formal `NATURAL ACCEPTED / DONE` on 2026-08-15 (`COL-20260815-042614-BJT-pre_report`). PR #93 full-funnel observability was subsequently merged as `f408ccd801caff8cd51f228a4228b6fe0cd69c58`. These facts remove the prior Phase0B hold on offline eligibility work, but do not create production wiring or automatically start Phase0C.
+
+LR-v3.5.1 still requires its first re-enabled 07:35 scheduled natural acceptance. E0 remains independent of that runtime gate and must not be promoted merely because the LR run passes.
