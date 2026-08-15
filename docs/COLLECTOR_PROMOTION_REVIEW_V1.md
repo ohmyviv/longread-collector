@@ -15,39 +15,24 @@ auto_promote_when_ready: FALSE
 
 The durable Google Doc version is `每日长文推荐 — Collector Promotion Review v1`, document id `1C3H3aHSGLNI-7FYOsKtQsMw4htpx_wG8FuGuHiX_zus`.
 
-## 1. Purpose
-
-Reconcile historical promotion thresholds with the current v0.6 architecture and evidence, and define what must be true before Collector can move from Shadow to production use.
-
-This is an evaluation/release-design document only. It does not change `collector_config`, `collector_health`, mode, `article_cache`, the 07:35 input path, budgets, L4/L5/L6, or auto-promotion.
-
-## 2. Current decision
+## 1. Current decision
 
 **DO NOT PROMOTE.**
 
-Reasons:
+Transport/engineering is healthy, but promotion evidence is incomplete. Final Recall v1.2 has now produced its first live scheduled strict datapoint; the result is an early negative signal, not a pass. Human Utility, multi-day A/B, E1 factual eligibility readiness and current-version health/evaluation reconciliation are also not complete.
 
-- Transport/engineering is READY and the 2026-08-15 Shadow baseline is healthy.
-- Editorial Gate remains NOT_READY.
-- Promotion Gate remains SHADOW.
-- Final Recall v1.2 prospective strict baseline does not yet exist.
-- `collector_evaluations` has no formal current `collector-v0.6-pr7.3.9` Human/Editorial release evaluation.
-- live `collector_health` blocker still references legacy `v056j` review state.
-- Standard Longread Eligibility E0 is offline-only; E1 factual recognition/routing is not production-ready.
-- no multi-day Collector universe vs independent High/native Human Utility A/B has established promotion-grade selected/strong/Chinese recall.
-
-## 3. Historical promotion settings
+## 2. Historical promotion settings
 
 Still-valid principles:
 
 - Transport Gate and Editorial Gate must both be READY before promotion is considered.
 - Shadow validation must complete.
-- critical product-breaking false accepts must remain zero.
+- product-breaking false accepts must remain zero.
 - code/config/run/evaluation versions must reconcile.
 - `auto_promote_when_ready` remains FALSE.
-- a production switch requires explicit human approval.
+- production switch requires explicit human approval.
 
-Historical/reference thresholds remain useful diagnostics but are not sufficient current-v0.6 promotion criteria on their own:
+Historical thresholds remain useful diagnostics but are not sufficient current-v0.6 promotion criteria by themselves:
 
 ```text
 promotion_min_shadow_days=3
@@ -59,166 +44,127 @@ promotion_min_candidate_precision=0.85
 promotion_min_source_chase_recall=6/7
 promotion_min_critical_false_accepts=0
 promotion_min_wire_dedup_accuracy=1
-v0.4/v0.5 version-specific minimum shadow days
 ```
 
-Why not mechanical promotion criteria:
+They were introduced under older v0.4/v0.5/v0.5.6 semantics. The project later changed L4 provenance, snapshot integrity, Phase0B freshness selection, Recall denominator, full-funnel measurement and Human Recommendation evidence. Preserve these rows as history; reclassify them only in a future reviewed config change.
 
-- they were introduced under older v0.4/v0.5/v0.5.6 semantics;
-- the project later changed L4 provenance semantics, snapshot integrity, Phase0B freshness selection, Recall denominator, full-funnel measurement and Human Recommendation evidence;
-- raw eligible counts and technical-domain counts are not Human Utility;
-- old fixed-fixture accuracy cannot substitute for current natural Recall/editorial utility.
-
-Do not delete these historical rows today. Reclassify/migrate them in a future reviewed config change while preserving history.
-
-## 4. Promotion Gate v1
+## 3. Promotion Gate v1
 
 ### Gate A — Engineering / Transport
 
 Current: **PASS / READY**.
 
-Required:
+Required: stable natural Collector runs, durable full snapshot/readback, capture gap=0, no duplicate or unapproved incremental shadow network/body/Firecrawl cost, body fingerprint integrity, semantic P0=0/P1 within budget, and source-cap/freshness compliance.
 
-- multiple stable scheduled natural Collector runs;
-- durable full snapshot/readback;
-- capture gap=0;
-- no duplicate shadow network/body request;
-- no unapproved incremental Firecrawl/body/network cost;
-- body fingerprint integrity;
-- semantic P0=0 and P1 within error budget;
-- source cap/freshness policy respected.
-
-The 2026-08-15 baseline satisfies these for the evaluated run, but one run alone cannot authorize promotion.
+The 2026-08-15 baseline satisfies these for the evaluated run.
 
 ### Gate B — Promotion-grade Recall
 
-Current: **PENDING**.
+Current: **STARTED / FIRST LIVE STRICT DATAPOINT AVAILABLE / EARLY NEGATIVE SIGNAL / NOT PASS**.
 
-Required:
+GitHub Actions `31857563720` completed the first scheduled Final Recall v1.2 `write_to_sheets` run and verified both `final_recall_daily_v12` and all 8 detail rows in `final_recall_audit_v12`.
 
-- Final Recall v1.2 item-observation-window evidence from Phase0A-post durable snapshots;
-- a prospective strict baseline, not legacy `53/75` or raw candidate counts;
-- separation of registry/source coverage, route miss after timely scan, acquisition observation boundary, L4 failure and downstream editorial/portfolio loss;
-- strong-item and selected-item recall against an independent reference;
-- Chinese Recall reported separately.
+Audited final run:
 
-No numeric v1.2 promotion threshold is invented here. Calibrate it from prospective evidence.
+```text
+LR-20260815-0811-BJT-LRv35
+final_items=8
+registered/effective-route discovered=2/8=25%
+partial_observation_items=5
+strict_effective_route_denominator=3
+strict_effective_route_discovered=1
+strict_effective_route_discovery_recall=33.33%
+strict_effective_route_editable=0
+```
+
+The five partial items cross the Phase0A strict snapshot epoch and are correctly excluded from the promotion-grade strict denominator.
+
+The three strict 0–3d items are:
+
+- FT `AI frenzy drives Chinese tech valuations to multiples of US peers`: captured by RSS but rejected at prefilter `source_initial_cap_reserve`;
+- Reuters `While the world is distracted, China steps up its strategic game`: strict `not_discovered`;
+- Guardian extreme-weather/culture-war commentary: strict `not_discovered`.
+
+This 1/3 result is a meaningful early warning that route/discovery quality may remain a promotion blocker, but n=3 is too small for a stable threshold or route rewrite. Continue prospective accumulation; do not expand budgets or patch routes from this datapoint alone.
 
 ### Gate C — Human Utility / Incremental Human-Useful Recall
 
 Current: **PENDING**.
 
-Required:
-
-- multi-day evaluation of Collector-only and overlapping candidates against an independent native/manual-High reference;
-- established human labels where feasible: 强烈值得 / 值得 / 一般 / 不应推荐;
-- Human-useful overlap plus Collector-exclusive Human-useful additions;
-- noise/false-accept burden reported separately;
-- more raw URLs must never be treated as product value by itself.
-
-Primary question: does Collector consistently add worthwhile articles the existing native path misses without reducing final recommendation quality?
+Required: multi-day Collector-only/overlap evaluation against independent native/manual-High reference, established human labels for plausible high-value candidates, Collector-exclusive Human-useful additions, and noise burden reported separately.
 
 ### Gate D — Multi-day Editorial A/B and stability
 
 Current: **PENDING**.
 
-Required:
-
-- multiple natural days, not one favorable run;
-- same downstream L4/eligibility/L5/L6 basis for Collector and independent reference universes;
-- comparison of strong recall, selected recall, Chinese recall, source breadth, actionable yield and Human Hit Rate;
-- evidence that Collector candidate formation is at least as reliable and materially more reproducible than the current scheduled native path;
-- no threshold changes during the A/B window to manufacture a pass.
+Required: multiple natural days on the same downstream L4/eligibility/L5/L6 basis, comparing strong recall, selected recall, Chinese recall, source breadth, actionable yield and Human Hit Rate without changing thresholds during the measurement window.
 
 ### Gate E — Standard Longread factual / eligibility readiness
 
 Current: **PARTIAL / E0 ONLY**.
 
-Required before `cache_primary` or Primary Discovery:
-
-- E1 high-confidence factual recognition/routing for recurring briefings, academic assets and video-first pages;
-- known wrong-medium/asset failures cannot occupy Standard Longread slots;
-- no source-wide blacklist;
-- length remains measurement-first until E2 proves a safe rule.
-
-E0 is evidence architecture, not production readiness.
+Before `cache_primary` or Primary Discovery: E1 must resolve high-confidence recurring briefing, academic asset and video-first identities; known wrong-medium/asset failures must not occupy Standard Longread slots; no source-wide blacklist; length remains measurement-first until E2 proves a safe rule.
 
 ### Gate F — Version and health reconciliation
 
 Current: **FAIL / STALE LEGACY STATE**.
 
-Required:
-
-- GitHub merged version, `collector_config`, latest `collector_runs` classification/pipeline version and `collector_evaluations` describe the same release candidate;
-- `collector_health` no longer points to stale `v056j` blocker language;
-- a current `collector-v0.6-pr7.3.9` evaluation decision exists;
-- disagreement blocks promotion rather than being papered over by editing a READY cell.
+`collector_health` still references `editorial_gate_not_ready_v056j_review_pending`, while runtime is `collector-v0.6-pr7.3.9`; `collector_evaluations` still lacks a formal current-pr7.3.9 Human/Editorial release evaluation. Existing `collector_version_reconciliation_policy` makes this mismatch promotion-blocking.
 
 ### Gate G — Manual approval
 
 Current: **NOT REQUESTED**.
 
-Required:
+`auto_promote_when_ready` remains FALSE. All prior gates, rollback criteria and measurement window must be reviewed before an explicit human approval.
 
-- `auto_promote_when_ready` remains FALSE;
-- all prior gates are reviewed together;
-- a human explicitly approves the transition;
-- rollback criteria and measurement window are defined before switching.
+## 4. Recommended staged adoption
 
-## 5. Recommended staged adoption
-
-Do not jump directly from Shadow to exclusive Primary Discovery.
-
-### Stage 1 — Shadow (current)
-
-- Collector produces evidence/candidate universe only.
-- `article_cache` cannot influence pre-freeze 07:35 selection.
-- native/manual reference remains independent.
-
-### Stage 2 — Production Candidate Input (future)
-
-Requires manual approval.
-
-- Collector candidates may enter the 07:35 candidate universe.
-- native Discovery remains active in parallel.
-- `candidate_origin` and provenance are retained.
-- all candidates face the same eligibility/L5/L6 rules.
-- origin=Collector receives no preferential score.
-- production-context overlap, incremental utility and misses are measured.
-
-### Stage 3 — Primary Discovery (later)
-
-Only after Stage 2 demonstrates adequate selected/strong/Chinese recall, Human Utility, stable operations and no systematic blind spot. Native ChatGPT Discovery can then become a bounded audit/fallback/benchmark lane.
-
-This staged path is release design only and does not activate a mode switch.
-
-## 6. Current matrix
+Do not jump from Shadow directly to exclusive Primary Discovery.
 
 ```text
-A Engineering/Transport       PASS / READY
-B Strict Recall               PENDING
-C Human Utility               PENDING
-D Multi-day Editorial A/B     PENDING
-E Eligibility readiness       PARTIAL / E0 ONLY
-F Version/health reconciliation FAIL / STALE LEGACY STATE
-G Manual approval             NOT REQUESTED
-
-Overall                       NOT_READY / remain SHADOW
+Stage 1 — Shadow (current)
+  ↓
+Stage 2 — Production Candidate Input
+  Collector candidates may enter the 07:35 universe;
+  native Discovery remains parallel;
+  candidate_origin/provenance retained;
+  identical eligibility/L5/L6 rules;
+  no origin preference.
+  ↓
+Stage 3 — Primary Discovery
+  only after production-context multi-day A/B proves adequate
+  selected/strong/Chinese recall, Human Utility and stability.
 ```
 
-## 7. Near-term evidence plan
+This is release design only and does not activate a mode switch.
+
+## 5. Current matrix
+
+```text
+A Engineering/Transport          PASS / READY
+B Strict Recall                  STARTED / EARLY NEGATIVE SIGNAL / NOT PASS
+C Human Utility                  PENDING
+D Multi-day Editorial A/B        PENDING
+E Eligibility readiness          PARTIAL / E0 ONLY
+F Version/health reconciliation  FAIL / STALE LEGACY STATE
+G Manual approval                NOT REQUESTED
+
+Overall                          NOT_READY / remain SHADOW
+```
+
+## 6. Near-term evidence plan
 
 1. keep Collector in Shadow and freeze promotion state;
-2. establish Final Recall v1.2 prospective strict baseline from Phase0A-post snapshots;
+2. continue Final Recall v1.2 prospective strict accumulation from the Phase0A epoch;
 3. over 3–7 natural days, produce daily artifact-only funnel summaries;
 4. compare Collector universe with independent native/manual-High references where available;
 5. human-review plausible Collector-exclusive high-value candidates, not every raw URL;
 6. calculate Incremental Human-Useful Recall and Chinese recall;
-7. continue E1 factual identity/eligibility work offline and separately;
-8. after evidence accumulates, create a current-v0.6 Promotion Reconciliation config/release review that retires or reclassifies stale legacy health semantics and writes a current release-candidate evaluation;
+7. keep E1 factual identity/eligibility work offline and separate;
+8. after evidence accumulates, perform a reviewed current-v0.6 Promotion Reconciliation config/release change and create a current release-candidate evaluation;
 9. only then request manual approval for Production Candidate Input.
 
-## 8. Hard boundaries until next review
+## 7. Hard boundaries
 
 - mode remains `shadow`;
 - Promotion Gate remains `SHADOW`;
