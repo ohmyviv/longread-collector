@@ -88,6 +88,7 @@ class DailyPromotionEvidence:
     partial_observation_items: int = 0
 
     # Task 2 attribution evidence.  These count strict Recall misses only.
+    # A 0/0 metric explicitly means the attribution level was not measured.
     strict_miss_attribution_confirmed: CountMetric = CountMetric()
     strict_miss_attribution_strongly_supported: CountMetric = CountMetric()
     unresolved_strict_miss_count: int = 0
@@ -121,15 +122,23 @@ class DailyPromotionEvidence:
         for field_name in integer_fields:
             if getattr(self, field_name) < 0:
                 raise ValueError(f"{field_name} must be non-negative")
+
+        strict_miss_count = (
+            self.strict_final_recall.denominator - self.strict_final_recall.numerator
+        )
         for metric_name in (
             "strict_miss_attribution_confirmed",
             "strict_miss_attribution_strongly_supported",
         ):
             metric = getattr(self, metric_name)
-            if metric.denominator != self.strict_final_recall.denominator - self.strict_final_recall.numerator:
+            if metric.denominator not in {0, strict_miss_count}:
                 raise ValueError(
-                    f"{metric_name} denominator must equal strict Recall miss count"
+                    f"{metric_name} denominator must be 0 (unmeasured) or equal strict Recall miss count"
                 )
+        if self.unresolved_strict_miss_count > strict_miss_count:
+            raise ValueError(
+                "unresolved_strict_miss_count cannot exceed strict Recall miss count"
+            )
 
 
 @dataclass(frozen=True, slots=True)
