@@ -18,9 +18,7 @@ The durable Google Doc version is `每日长文推荐 — Collector Baseline Eva
 
 ## 1. Purpose
 
-Establish the first formal post-Phase0B Collector Shadow baseline using natural scheduled evidence plus merged PR #93 observation-aware funnel semantics.
-
-This evaluation does **not** change Collector runtime/config, source cap, network/Firecrawl/body budgets, L4/L5/L6, `article_cache` consumption or promotion state.
+Establish the first formal post-Phase0B Collector Shadow baseline using natural scheduled evidence plus merged PR #93 observation-aware funnel semantics. This evaluation does not change Collector runtime/config, source cap, network/Firecrawl/body budgets, L4/L5/L6, `article_cache` consumption or promotion state.
 
 ## 2. Authority reconciliation
 
@@ -46,7 +44,6 @@ freshness_reserve:
   quanta
   atlantic
   propublica
-
 coverage_rotation:
   yale-e360
   404media
@@ -73,19 +70,6 @@ PASS:
 - zero_duplicate_network_invariant=true;
 - fallback requests_sent/succeeded/failed=0/0/0.
 
-Source-selection ages:
-
-```text
-wired          23.687h freshness_reserve
-newyorker      23.687h freshness_reserve
-restofworld    23.687h freshness_reserve
-quanta         23.687h freshness_reserve
-atlantic       23.687h freshness_reserve
-propublica     23.687h freshness_reserve
-yale-e360      47.707h coverage_rotation
-404media       28.692h coverage_rotation
-```
-
 Effective-route audit:
 
 ```text
@@ -102,22 +86,18 @@ metadata_limit_per_source=24
 
 ## 4. Observation-aware full funnel
 
-PR #93 semantics apply. A missing `acquisition_result` means the control path did not expose a body to shadow; it is an observation boundary, not an Acquisition failure. Projection is not currently emitted by the shadow runner.
+PR #93 semantics apply. Missing `acquisition_result` means the control path did not expose a body to shadow; it is an observation boundary, not an Acquisition failure. Projection is not currently emitted.
 
 ```text
 12 attempted Discovery surfaces
 → 208 raw Discovery observations
 → 208 unique URL hints
-→ 202 gate acquire
-   + 5 hard_reject
-   + 1 defer
+→ 202 gate acquire + 5 hard_reject + 1 defer
 → 32 control-body observed
 → 32 Acquisition success
 → 32 Canonical success
 → 32 Editorial decision-eligible
-→ 14 consider/actionable
-   + 18 low_value
-   + 0 recommend
+→ 14 consider/actionable + 18 low_value + 0 recommend
 → 10 selected
 Projection emitted: 0
 ```
@@ -130,18 +110,11 @@ reject=23
 defer=175
 ```
 
-Do not describe the 175 defers as 175 Acquisition or editorial failures. Most represent body-not-observed boundaries.
+Do not describe the 175 defers as 175 Acquisition or editorial failures; most are body-not-observed boundaries.
 
 ## 5. Reference comparison
 
-Reference natural pre_report:
-
-```text
-COL-20260814-042612-BJT-pre_report
-Actions 31740786490
-```
-
-Reference funnel:
+Reference natural pre_report `COL-20260814-042612-BJT-pre_report` / Actions `31740786490`:
 
 ```text
 12 surfaces
@@ -162,37 +135,34 @@ shadow request/Firecrawl/incremental cost = 0
 - selected 10→10;
 - actionable 14→14;
 - observed Acquisition 30 success +2 partial →32 success;
-- engineering invariants remain clean;
-- coverage-rotation sources changed naturally under LRU/coverage behavior.
+- engineering invariants remain clean.
 
 This supports mechanical stability, not product superiority. The 32 body-observed items are capacity/control-selected, not a random sample of all 208 observations.
 
 ## 6. Product/editorial interpretation
 
-The ten v0.6 selected items all carry frozen L5 verdict `consider`; none is `recommend`.
-
-This does **not** establish Human Utility. The existing 80-item Human Recommendation Review is a review of delivered LR recommendations, not these Shadow selected items, and must not be projected onto this set.
+The ten v0.6 selected items all carry frozen L5 verdict `consider`; none is `recommend`. This does not establish Human Utility. The existing 80-item Human Recommendation Review covers delivered LR recommendations, not these Shadow selected items.
 
 One selected WIRED item shows a page-surface/medium disagreement. Preserve it as E1/eligibility diagnostic evidence; this single sample is not sufficient to reopen frozen L4/L5.
 
-## 7. What the baseline proves
+## 7. Same-day subsequent evidence — Final Recall v1.2
 
-Proves:
+After this engineering baseline was established, GitHub Actions `31857563720` completed the first live scheduled Final Recall v1.2 `write_to_sheets` run and verified both the daily summary and all 8 detail rows.
 
-- Phase0B source freshness/cap behavior remains correct;
-- durable snapshot/readback and zero-incremental-shadow-network invariants hold;
-- merged PR #93 can produce an observation-aware funnel from a natural artifact without new runtime network/Sheet writes;
-- Collector can produce a stable replayable Shadow universe and selected subset.
+For the 8-item independent manual-High final set:
 
-Does not prove:
+```text
+registered/effective-route discovered = 2/8 = 25%
+partial_observation_items = 5
+strict_effective_route_denominator = 3
+strict_effective_route_discovered = 1
+strict discovery recall = 33.33%
+strict editable = 0
+```
 
-- promotion-grade Recall;
-- Human Utility;
-- superiority over independent GPT-5.6 Thinking + High/native Discovery;
-- Chinese Recall adequacy;
-- E1 factual/eligibility readiness;
-- Editorial Gate readiness;
-- readiness for `article_cache` production consumption.
+The strict three are all age 0–3d: one FT item was captured by RSS but rejected at `source_initial_cap_reserve`; Reuters and Guardian items were strict `not_discovered`.
+
+This does not change the engineering baseline PASS. It strengthens the conclusion that product/editorial promotion is NOT READY. The strict denominator is only 3, so this is an early negative signal, not a stable long-run Recall estimate and not grounds for a route/budget rewrite by itself.
 
 ## 8. Decision
 
@@ -203,4 +173,4 @@ Editorial/product promotion:       NOT READY
 Promotion effect:                  NONE
 ```
 
-Next evidence should be prospective Final Recall v1.2 plus multi-day Collector-vs-independent-reference A/B, not a runtime expansion based on this single baseline.
+Next evidence is multi-day prospective Final Recall v1.2 plus Collector-vs-independent-reference A/B, not a runtime expansion based on a single day.
