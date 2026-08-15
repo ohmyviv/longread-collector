@@ -83,6 +83,23 @@ Length is a separate measurement-first track. Any future threshold proposal must
 
 ## Current natural-gate state
 
-Phase0B patched `pre_report` reached formal `NATURAL ACCEPTED / DONE` on 2026-08-15 (`COL-20260815-042614-BJT-pre_report`). PR #93 full-funnel observability was subsequently merged as `f408ccd801caff8cd51f228a4228b6fe0cd69c58`. These facts remove the prior Phase0B hold on offline eligibility work, but do not create production wiring or automatically start Phase0C.
+Phase0B reached formal `NATURAL ACCEPTED / DONE` on 2026-08-15. The authoritative closure run is:
 
-LR-v3.5.1 still requires its first re-enabled 07:35 scheduled natural acceptance. E0 remains independent of that runtime gate and must not be promoted merely because the LR run passes.
+```text
+collector_run_id: COL-20260815-041810-BJT-pre_report
+GitHub Actions:   31837235761
+snapshot:         208/208
+readback:         true
+full invariant:   true
+sources:          6 freshness + 2 coverage = 8
+```
+
+A previous document tuple `COL-20260815-042614-BJT-pre_report / 156` was stale and has been corrected from higher-authority GitHub artifact plus live run-ledger evidence.
+
+PR #93 full-funnel observability was subsequently merged as `f408ccd801caff8cd51f228a4228b6fe0cd69c58`. PR #94 E0 itself is merged as `4b581db494668a9da8897b88ced251e80dce6912`. These facts permit further offline eligibility work but do not create production wiring or promotion readiness.
+
+The 07:35 scheduled LR path is a separate gate. LR-v3.5.1 received its first natural acceptance test on 2026-08-15 and **failed** despite Coverage Gate PASS: raw=8 / verified=2 / strong=2 / selected=2, followed by `FINAL_PERSISTENCE_SHEETID_MISMATCH`. Independent manual GPT-5.6 Thinking + High produced raw=26 / verified=23 / strong=13 / selected=8, so two-item supply scarcity was rejected while High itself remains only one confounder.
+
+LR-v3.5.2 is now implemented as a runtime-only scheduled completeness/persistence repair, with first natural acceptance target `2026-08-16 07:35 BJT`. E0 remains offline and independent of that runtime gate. Do not production-wire E0 or modify frozen L5 merely to improve the LR-v3.5.2 acceptance result or Collector promotion metrics.
+
+Collector itself remains `mode=shadow`, Editorial Gate `NOT_READY`, Promotion Gate `SHADOW`, and `article_cache` production consumption prohibited.
