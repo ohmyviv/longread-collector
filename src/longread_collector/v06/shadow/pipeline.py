@@ -160,12 +160,12 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
                     "full_snapshot_invariant": False,
                 }
 
-            # Persist only a compact run-level projection.  This happens after
+            # Persist only a compact run-level projection. This happens after
             # Shadow has finished (or failed open), so persistence cannot alter
-            # any Gate/Canonical/Editorial/Selection decision.  The helper is
-            # itself fail-open and never raises into the Collector result path.
+            # any Gate/Canonical/Editorial/Selection decision. Missing/unready
+            # storage is itself an observability failure and remains fail-open.
             summary_persistence = persist_shadow_run_summary_from_payload_fail_open(
-                self.store,
+                getattr(self, "store", None),
                 shadow_payload,
                 collector_run_id=context.run_id,
                 query_group=group,
