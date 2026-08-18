@@ -1,4 +1,4 @@
-"""Phase 0B deadline-aware source freshness selection."""
+"""Phase 0B deadline-aware source freshness and coverage-debt selection."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any
 from .known_source_fixes import apply_known_source_fixes
 from .native_discovery import _parse_last_scanned, select_sources_for_run as _base_selector
 
-SOURCE_SELECTION_POLICY_VERSION = "deadline-freshness-reserve-v0.6-phase0b.1"
+SOURCE_SELECTION_POLICY_VERSION = "deadline-freshness-coverage-debt-v0.6-phase0b.2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +20,10 @@ class SourceFreshnessPolicy:
     freshness_source_ids: tuple[str, ...] = ()
     freshness_max_sources: int = 0
     rotate_share: float = 0.75
+    coverage_debt_enabled: bool = False
+    coverage_debt_source_ids: tuple[str, ...] = ()
+    coverage_debt_max_sources: int = 0
+    coverage_debt_min_rotation_slots: int = 1
 
 
 @dataclass(slots=True)
@@ -117,16 +121,31 @@ def select_sources_for_run(
     max_sources: int,
     rotate_share: float = 0.75,
 ) -> list[dict[str, Any]]:
-    """Reserve configured deadline-freshness slots inside the existing cap."""
+    """Reserve freshness/debt slots inside the existing source cap.
+
+    Coverage Debt is deliberately bounded: it may only pre-empt ordinary
+    rotation capacity, never configured freshness reserves, and it must leave
+    at least ``coverage_debt_min_rotation_slots`` ordinary slots when possible.
+    """
+
     state = current_source_selection_state()
     policy = state.policy if state is not None else SourceFreshnessPolicy()
     share = policy.rotate_share if state is not None else rotate_share
-    if (
-        not policy.enabled
-        or max_sources <= 0
-        or policy.freshness_max_sources <= 0
-        or not policy.freshness_source_ids
-    ):
+    freshness_active = (
+        policy.enabled
+        and policy.freshness_max_sources > 0
+        and bool(policy.freshness_source_ids)
+    )
+    debt_active = (
+        policy.enabled
+        and policy.coverage_debt_enabled
+        and policy.coverage_debt_max_sources > 0
+        and bool(policy.coverage_debt_source_ids)
+    )
+    if max_sources <= 0:
+        _record([], [])
+        return []
+    if not freshness_active and not debt_active:
         return _baseline(
             sources, started=started, max_sources=max_sources, rotate_share=share
         )
@@ -142,27 +161,53 @@ def select_sources_for_run(
         for source in enabled
         if str(source.get("source_id", ""))
     }
+
     configured = list(dict.fromkeys(policy.freshness_source_ids))
     missing = [source_id for source_id in configured if source_id not in by_id]
-    order = {source_id: index for index, source_id in enumerate(configured)}
-    fresh = [by_id[source_id] for source_id in configured if source_id in by_id]
-    fresh.sort(
-        key=lambda source: (
-            _sort_key(source)[0],
-            order.get(str(source.get("source_id", "")), 10**9),
-            str(source.get("source_id", "")),
+    fresh: list[dict[str, Any]] = []
+    if freshness_active:
+        order = {source_id: index for index, source_id in enumerate(configured)}
+        fresh = [by_id[source_id] for source_id in configured if source_id in by_id]
+        fresh.sort(
+            key=lambda source: (
+                _sort_key(source)[0],
+                order.get(str(source.get("source_id", "")), 10**9),
+                str(source.get("source_id", "")),
+            )
         )
-    )
-    fresh = fresh[: min(max_sources, policy.freshness_max_sources)]
+        fresh = fresh[: min(max_sources, policy.freshness_max_sources)]
+
     fresh_ids = {str(source.get("source_id", "")) for source in fresh}
     selected = [_annotate(source, "freshness_reserve", started) for source in fresh]
+
+    debt: list[dict[str, Any]] = []
+    if debt_active:
+        remaining_after_fresh = max(0, max_sources - len(selected))
+        ordinary_floor = min(
+            max(0, policy.coverage_debt_min_rotation_slots),
+            remaining_after_fresh,
+        )
+        debt_capacity = max(0, remaining_after_fresh - ordinary_floor)
+        debt_capacity = min(debt_capacity, policy.coverage_debt_max_sources)
+        for source_id in dict.fromkeys(policy.coverage_debt_source_ids):
+            if len(debt) >= debt_capacity:
+                break
+            if source_id in fresh_ids or source_id not in by_id:
+                continue
+            debt.append(by_id[source_id])
+        selected.extend(_annotate(source, "coverage_debt", started) for source in debt)
+
+    reserved_ids = {
+        str(source.get("source_id", "")) for source in fresh + debt
+    }
     slots = max_sources - len(selected)
     if slots <= 0:
+        selected = selected[:max_sources]
         _record(selected, missing)
-        return selected[:max_sources]
+        return selected
 
     ordinary = [
-        source for source in enabled if str(source.get("source_id", "")) not in fresh_ids
+        source for source in enabled if str(source.get("source_id", "")) not in reserved_ids
     ]
     today = started.replace(tzinfo=None).date()
     not_today = [
@@ -186,13 +231,14 @@ def select_sources_for_run(
     )
     rotate_target = min(total_rotate, max(1, round(max_sources * share)))
     explore_target = max(0, max_sources - rotate_target)
-    fresh_rotate = sum(
-        str(source.get("priority_tier", "")) == "rotate" for source in fresh
+    reserved = fresh + debt
+    reserved_rotate = sum(
+        str(source.get("priority_tier", "")) == "rotate" for source in reserved
     )
-    fresh_explore = len(fresh) - fresh_rotate
+    reserved_explore = len(reserved) - reserved_rotate
 
     coverage: list[dict[str, Any]] = []
-    take_rotate = min(max(0, rotate_target - fresh_rotate), slots)
+    take_rotate = min(max(0, rotate_target - reserved_rotate), slots)
     coverage.extend(rotate[:take_rotate])
     slots -= take_rotate
     picked = {str(source.get("source_id", "")) for source in coverage}
@@ -200,7 +246,7 @@ def select_sources_for_run(
         explore_choices = [
             source for source in explore if str(source.get("source_id", "")) not in picked
         ]
-        take_explore = min(max(0, explore_target - fresh_explore), slots)
+        take_explore = min(max(0, explore_target - reserved_explore), slots)
         coverage.extend(explore_choices[:take_explore])
         slots -= take_explore
 
@@ -230,6 +276,9 @@ def selection_audit_payload() -> dict[str, Any]:
             "group_id": "",
             "freshness_source_ids": [],
             "freshness_max_sources": 0,
+            "coverage_debt_enabled": False,
+            "coverage_debt_source_ids": [],
+            "coverage_debt_max_sources": 0,
             "selected": [],
             "missing_freshness_source_ids": [],
         }
@@ -239,6 +288,9 @@ def selection_audit_payload() -> dict[str, Any]:
         "group_id": state.policy.group_id,
         "freshness_source_ids": list(state.policy.freshness_source_ids),
         "freshness_max_sources": state.policy.freshness_max_sources,
+        "coverage_debt_enabled": state.policy.coverage_debt_enabled,
+        "coverage_debt_source_ids": list(state.policy.coverage_debt_source_ids),
+        "coverage_debt_max_sources": state.policy.coverage_debt_max_sources,
         "selected": list(state.selected),
         "missing_freshness_source_ids": list(state.missing_freshness_source_ids),
     }
