@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+import re
+from datetime import datetime, time, timedelta
 from typing import Any, Iterable
 
 from dateutil import parser as date_parser
@@ -41,6 +42,8 @@ SOURCE_RUN_COVERAGE_HEADERS = [
     "coverage_version",
 ]
 
+_DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
 
 def _column_name(column_number: int) -> str:
     if column_number < 1:
@@ -65,6 +68,29 @@ def _parse_datetime(value: Any, tz: Any) -> datetime | None:
         parsed = parsed.replace(tzinfo=tz)
     else:
         parsed = parsed.astimezone(tz)
+    return parsed
+
+
+def _coverage_boundary(value: Any, parsed: datetime, started: datetime) -> datetime:
+    """Return the oldest instant that the observation can safely prove covered.
+
+    A date-only value such as ``2026-08-17`` does not prove that the article was
+    available at 00:00.  Its latest possible publication instant is the end of
+    that calendar day, so the conservative lower-bound boundary is the next
+    day's midnight.  If the scan occurs before that boundary, the observation
+    proves zero lookback hours and the run start itself becomes the boundary.
+
+    Timestamp-precision evidence keeps its literal instant.
+    """
+
+    text = str(value or "").strip()
+    if _DATE_ONLY_RE.fullmatch(text):
+        next_day = datetime.combine(
+            parsed.date() + timedelta(days=1),
+            time.min,
+            tzinfo=started.tzinfo,
+        )
+        return min(started, next_day)
     return parsed
 
 
@@ -166,8 +192,10 @@ def build_source_run_coverage_rows(
     """Build one immutable-observation row for every selected registered source.
 
     Coverage horizons are evidence lower bounds derived only from dated native
-    observations. Directed Firecrawl search can prove fallback activity or raw
-    capture, but it never manufactures native-route coverage.
+    observations. Date-only observations use the end of their calendar day as
+    the conservative coverage boundary rather than silently assuming 00:00.
+    Directed Firecrawl search can prove fallback activity or raw capture, but it
+    never manufactures native-route coverage.
     """
 
     selected = list(selected_sources)
@@ -208,14 +236,27 @@ def build_source_run_coverage_rows(
         source_native_items = native_items_by_source.get(source_id, [])
         source_fallback_items = fallback_items_by_source.get(source_id, [])
 
-        dated: list[datetime] = []
+        dated: list[tuple[datetime, datetime]] = []
         for item in source_native_items:
-            parsed = _parse_datetime(_item_published_at(item), started.tzinfo)
+            raw_published = _item_published_at(item)
+            parsed = _parse_datetime(raw_published, started.tzinfo)
             if parsed is not None and parsed <= started:
-                dated.append(parsed)
+                dated.append(
+                    (
+                        parsed,
+                        _coverage_boundary(raw_published, parsed, started),
+                    )
+                )
 
-        oldest = min(dated) if dated else None
-        newest = max(dated) if dated else None
+        literal_dates = [parsed for parsed, _ in dated]
+        coverage_boundaries = [boundary for _, boundary in dated]
+        # The persisted oldest value is deliberately the conservative coverage
+        # boundary because v1.3 consumes it as interval evidence.  For exact
+        # timestamps it equals the literal publication instant; for date-only
+        # evidence it moves to the next-day boundary and therefore cannot
+        # overstate proven route coverage.
+        oldest = min(coverage_boundaries) if coverage_boundaries else None
+        newest = max(literal_dates) if literal_dates else None
         horizon = (
             round(max(0.0, (started - oldest).total_seconds() / 3600), 3)
             if oldest is not None
