@@ -249,7 +249,11 @@ class Phase0BSourceSelectionHook:
 
         self._token = begin_source_selection(policy)
         self._old_selector = _pipeline_v05.select_sources_for_run
-        _pipeline_v05.select_sources_for_run = self._select_with_dynamic_debt
+        _pipeline_v05.select_sources_for_run = (
+            self._select_with_dynamic_debt
+            if policy.coverage_debt_enabled
+            else select_sources_for_run
+        )
         old_append = getattr(store, "append_collector_run", None)
         if callable(old_append):
             self._old_append = old_append
