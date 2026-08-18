@@ -13,6 +13,7 @@ import yaml
 from .classification import classify_candidate
 from .clients import FirecrawlClient, JinaReaderClient
 from .config import Settings
+from .directed_source_query import directed_query_for_source
 from .extraction import FallbackBudget, extract_article
 from .models import DiscoveredURL, ExtractedArticle
 from .normalization import canonicalize_url, domain_from_url, stable_id
@@ -61,11 +62,7 @@ def build_directed_source_queries(
         if not domain:
             continue
         language = str(source.get("language", "en")).strip() or "en"
-        query = (
-            "最新 深度 调查 分析 长文"
-            if language == "zh"
-            else "latest longform investigation analysis"
-        )
+        query, query_provenance = directed_query_for_source(source)
         result.append(
             {
                 "query_id": f"source:{source.get('source_id')}",
@@ -74,6 +71,7 @@ def build_directed_source_queries(
                 "sequence": -100 + sequence,
                 "language": language,
                 "query": query,
+                "directed_query_provenance": query_provenance,
                 "limit": result_limit,
                 "tbs": freshness,
                 "country": "",
