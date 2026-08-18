@@ -4,6 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from longread_collector.source_coverage_debt import compute_coverage_debt_candidates
+from longread_collector.source_run_coverage import SOURCE_RUN_COVERAGE_VERSION
 
 TZ = ZoneInfo("Asia/Shanghai")
 NOW = datetime(2026, 8, 17, 22, 52, tzinfo=TZ)
@@ -24,12 +25,14 @@ def coverage(
     horizon: float,
     *,
     route_status: str = "native_covered",
+    coverage_version: str = SOURCE_RUN_COVERAGE_VERSION,
 ) -> dict[str, object]:
     return {
         "source_id": source_id,
         "run_started_at_bj": started,
         "route_status": route_status,
         "observed_horizon_hours": horizon,
+        "coverage_version": coverage_version,
     }
 
 
@@ -133,6 +136,60 @@ def test_future_coverage_rows_are_ignored() -> None:
 
     assert len(candidates) == 1
     assert candidates[0].last_successful_coverage_at_bj == "2026-08-16 22:50:00"
+
+
+def test_older_coverage_contract_versions_are_ignored() -> None:
+    rows = [
+        coverage(
+            "ft",
+            "2026-08-16 22:50:00",
+            48.0,
+            coverage_version="run-source-coverage-legacy",
+        ),
+        coverage("ft", "2026-08-16 20:00:00", 18.8),
+        coverage("ft", "2026-08-14 23:17:00", 21.5),
+    ]
+
+    candidates = compute_coverage_debt_candidates(
+        sources=[source("ft")],
+        coverage_rows=rows,
+        started=NOW,
+        projection_hours=5.5,
+        safety_margin_hours=2.0,
+        min_samples=2,
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].proven_horizon_hours == 18.8
+    assert candidates[0].last_successful_coverage_at_bj == "2026-08-16 20:00:00"
+
+
+def test_only_old_contract_evidence_fails_closed() -> None:
+    rows = [
+        coverage(
+            "ft",
+            "2026-08-16 22:50:00",
+            18.8,
+            coverage_version="run-source-coverage-legacy",
+        ),
+        coverage(
+            "ft",
+            "2026-08-14 23:17:00",
+            21.5,
+            coverage_version="run-source-coverage-legacy",
+        ),
+    ]
+
+    candidates = compute_coverage_debt_candidates(
+        sources=[source("ft")],
+        coverage_rows=rows,
+        started=NOW,
+        projection_hours=5.5,
+        safety_margin_hours=2.0,
+        min_samples=2,
+    )
+
+    assert candidates == []
 
 
 def test_most_negative_slack_is_most_urgent() -> None:
