@@ -45,6 +45,7 @@ def _native_log(
     success: bool = True,
     results_count: int = 2,
     attempts=None,
+    fallback_needed: bool | None = None,
 ):
     return {
         "source_id": source_id,
@@ -53,7 +54,7 @@ def _native_log(
         "selected_method": "rss" if success else "",
         "selected_endpoint": "https://example.com/feed" if success else "",
         "results_count": results_count,
-        "fallback_needed": not success,
+        "fallback_needed": (not success) if fallback_needed is None else fallback_needed,
         "attempts": attempts or [],
     }
 
@@ -125,6 +126,7 @@ def test_native_zero_results_is_distinct_from_native_failure() -> None:
             _native_log(
                 success=False,
                 results_count=0,
+                fallback_needed=False,
                 attempts=[{"method": "rss", "http_status": 200, "results_count": 0}],
             )
         ],
@@ -137,6 +139,40 @@ def test_native_zero_results_is_distinct_from_native_failure() -> None:
     row = rows[0]
     assert row["native_status"] == "zero_results"
     assert row["route_status"] == "native_zero_results"
+
+
+def test_expected_fallback_without_attributed_log_is_unknown_not_not_attempted() -> None:
+    source_id = "reuters-special"
+    rows = build_source_run_coverage_rows(
+        run_id="COL-FALLBACK-UNKNOWN",
+        query_group="intl_early",
+        started=STARTED,
+        selected_sources=[_source(source_id)],
+        native_logs=[
+            _native_log(
+                source_id,
+                success=False,
+                results_count=0,
+                fallback_needed=True,
+                attempts=[
+                    {
+                        "method": "sitemap",
+                        "endpoint": "https://example.com/sitemap.xml",
+                        "error_type": "HTTPStatusError",
+                    }
+                ],
+            )
+        ],
+        native_items=[],
+        firecrawl_logs=[],
+        firecrawl_items=[],
+        persisted_at=STARTED,
+    )
+
+    row = rows[0]
+    assert row["fallback_attempted"] == "TRUE"
+    assert row["fallback_status"] == "attempted_unknown"
+    assert row["route_status"] == "fallback_unknown"
 
 
 def test_fallback_capture_never_manufactures_native_coverage() -> None:
