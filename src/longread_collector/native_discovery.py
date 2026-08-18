@@ -111,11 +111,11 @@ def select_sources_for_run(
     ]
     pool = not_today if len(not_today) >= min(max_sources, len(enabled)) else enabled
     rotate = sorted(
-        [source for source in pool if str(source.get("priority_tier", "")) == "rotate"],
+        [source for source in pool if str(source.get("priority_tier", "")).strip() == "rotate"],
         key=sort_key,
     )
     explore = sorted(
-        [source for source in pool if str(source.get("priority_tier", "")) != "rotate"],
+        [source for source in pool if str(source.get("priority_tier", "")).strip() != "rotate"],
         key=sort_key,
     )
 
@@ -126,7 +126,7 @@ def select_sources_for_run(
     remaining = sorted(
         [source for source in pool if str(source.get("source_id", "")) not in selected_ids],
         key=lambda source: (
-            0 if str(source.get("priority_tier", "")) == "rotate" else 1,
+            0 if str(source.get("priority_tier", "")).strip() == "rotate" else 1,
             *sort_key(source),
         ),
     )
@@ -148,6 +148,7 @@ def parse_parser_config(source: dict[str, Any]) -> dict[str, Any]:
         ["rss", "news_sitemap", "sitemap", "section_scan", "firecrawl_search"],
     )
     parsed.setdefault("section_urls", [])
+    parsed.setdefault("section_allow_subdomains", False)
     return parsed
 
 
@@ -376,6 +377,22 @@ class _AnchorParser(HTMLParser):
             self._text = []
 
 
+def _section_candidate_domain_allowed(
+    source: dict[str, Any],
+    candidate_domain: str,
+) -> bool:
+    domain = _source_domain(source)
+    candidate = str(candidate_domain or "").lower().removeprefix("www.")
+    if not domain or not candidate:
+        return False
+    if candidate == domain:
+        return True
+    config = parse_parser_config(source)
+    return _bool(config.get("section_allow_subdomains")) and candidate.endswith(
+        f".{domain}"
+    )
+
+
 def parse_section_html(
     body: str,
     *,
@@ -385,14 +402,15 @@ def parse_section_html(
 ) -> list[DiscoveredURL]:
     parser = _AnchorParser()
     parser.feed(body)
-    domain = _source_domain(source)
     items: list[DiscoveredURL] = []
     seen: set[str] = set()
     for href, title in parser.links:
         url = urljoin(endpoint, href)
         parts = urlsplit(url)
         candidate_domain = parts.netloc.lower().removeprefix("www.")
-        if parts.scheme not in {"http", "https"} or candidate_domain != domain:
+        if parts.scheme not in {"http", "https"} or not _section_candidate_domain_allowed(
+            source, candidate_domain
+        ):
             continue
         path = parts.path or "/"
         if NON_ARTICLE_PATH_RE.search(path):
