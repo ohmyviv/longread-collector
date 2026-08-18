@@ -1,4 +1,4 @@
-"""Extraction with zero-credit direct HTML recovery before Firecrawl."""
+"""Extraction with direct HTML first, anonymous Jina rescue, then Firecrawl."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from .extraction import (
 from .models import DiscoveredURL, ExtractedArticle
 from .normalization import canonicalize_url, domain_from_url, sha256_text, source_from_domain, stable_id
 
-EXTRACTION_VERSION = "extraction-v0.5.6m"
+EXTRACTION_VERSION = "extraction-v0.5.6m-g1"
 
 
 def _best(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -34,6 +34,14 @@ def _best(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
     return max(candidates, key=score, default=None)
 
 
+def _needs_rescue(candidate: dict[str, Any] | None, min_body_chars: int) -> bool:
+    return (
+        not candidate
+        or not candidate["valid_body"]
+        or len(candidate["content"]) < min_body_chars
+    )
+
+
 async def extract_article_v056m(
     discovered: DiscoveredURL,
     jina: Any,
@@ -47,12 +55,16 @@ async def extract_article_v056m(
     candidates: list[dict[str, Any]] = []
 
     started = time.perf_counter()
+
+    # G.1: always try zero-credit direct HTML first. This keeps the common path
+    # independent from Jina and only uses Reader as a rescue layer.
     try:
-        data, meta = await jina.read(discovered.url)
+        data, meta = await read_direct_html_v056m(discovered.url)
         content = _clean_value(data.get("markdown"))
+        metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
         candidates.append(
             _candidate(
-                extractor="jina",
+                extractor="direct_html",
                 content=content,
                 title=_clean_value(data.get("title")) or discovered.title,
                 author=_clean_value(
@@ -61,14 +73,14 @@ async def extract_article_v056m(
                     or discovered.metadata.get("authors")
                 ),
                 published_at=_clean_value(data.get("published_at")) or discovered.published_at,
-                description=discovered.description,
-                metadata={k: v for k, v in data.items() if k not in {"raw", "markdown"}},
+                description=_clean_value(data.get("description")) or discovered.description,
+                metadata=metadata,
                 url=discovered.url,
             )
         )
         attempts.append(
             {
-                "extractor": "jina",
+                "extractor": "direct_html",
                 "success": bool(content),
                 "body_chars": len(content),
                 **meta,
@@ -77,28 +89,25 @@ async def extract_article_v056m(
     except Exception as exc:
         attempts.append(
             {
-                "extractor": "jina",
+                "extractor": "direct_html",
                 "success": False,
                 "body_chars": 0,
                 "error_type": type(exc).__name__,
                 "error_message": str(exc)[:1000],
+                "request_sent": True,
+                "direct_html_version": DIRECT_HTML_VERSION,
             }
         )
 
     best_zero = _best(candidates)
-    direct_needed = (
-        not best_zero
-        or not best_zero["valid_body"]
-        or len(best_zero["content"]) < settings.min_body_chars
-    )
-    if direct_needed:
+    jina_needed = _needs_rescue(best_zero, settings.min_body_chars)
+    if jina_needed:
         try:
-            data, meta = await read_direct_html_v056m(discovered.url)
+            data, meta = await jina.read(discovered.url)
             content = _clean_value(data.get("markdown"))
-            metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
             candidates.append(
                 _candidate(
-                    extractor="direct_html",
+                    extractor="jina",
                     content=content,
                     title=_clean_value(data.get("title")) or discovered.title,
                     author=_clean_value(
@@ -107,14 +116,14 @@ async def extract_article_v056m(
                         or discovered.metadata.get("authors")
                     ),
                     published_at=_clean_value(data.get("published_at")) or discovered.published_at,
-                    description=_clean_value(data.get("description")) or discovered.description,
-                    metadata=metadata,
+                    description=discovered.description,
+                    metadata={k: v for k, v in data.items() if k not in {"raw", "markdown"}},
                     url=discovered.url,
                 )
             )
             attempts.append(
                 {
-                    "extractor": "direct_html",
+                    "extractor": "jina",
                     "success": bool(content),
                     "body_chars": len(content),
                     **meta,
@@ -123,13 +132,11 @@ async def extract_article_v056m(
         except Exception as exc:
             attempts.append(
                 {
-                    "extractor": "direct_html",
+                    "extractor": "jina",
                     "success": False,
                     "body_chars": 0,
                     "error_type": type(exc).__name__,
                     "error_message": str(exc)[:1000],
-                    "request_sent": True,
-                    "direct_html_version": DIRECT_HTML_VERSION,
                 }
             )
 
@@ -137,11 +144,7 @@ async def extract_article_v056m(
         item for item in candidates if item.get("extractor") in {"jina", "direct_html"}
     ]
     best_zero = _best(zero_cost_candidates)
-    should_fallback = (
-        not best_zero
-        or not best_zero["valid_body"]
-        or len(best_zero["content"]) < settings.min_body_chars
-    )
+    should_fallback = _needs_rescue(best_zero, settings.min_body_chars)
     fallback_allowed = False
     if should_fallback:
         fallback_allowed = fallback_budget is None or await fallback_budget.try_acquire()
@@ -272,6 +275,9 @@ async def extract_article_v056m(
     direct_attempts = [
         attempt for attempt in attempts if attempt.get("extractor") == "direct_html"
     ]
+    jina_attempts = [
+        attempt for attempt in attempts if attempt.get("extractor") == "jina"
+    ]
     metadata = {
         "discovery": discovered.metadata,
         "extraction": best.get("metadata", {}),
@@ -284,6 +290,13 @@ async def extract_article_v056m(
         "direct_html_attempted": bool(direct_attempts),
         "direct_html_succeeded": any(
             bool(attempt.get("success")) for attempt in direct_attempts
+        ),
+        "jina_fallback_requested": jina_needed,
+        "jina_fallback_attempted": bool(jina_attempts),
+        "jina_auth_mode": (
+            "authenticated"
+            if bool(getattr(jina, "api_key", None))
+            else "anonymous"
         ),
         "fallback_requested": should_fallback,
         "fallback_allowed": fallback_allowed,
