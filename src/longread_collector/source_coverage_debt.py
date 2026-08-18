@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from statistics import median
 from typing import Any, Iterable
 
 from .final_recall_audit import _sheet_datetime
@@ -74,11 +73,11 @@ def compute_coverage_debt_candidates(
 ) -> list[CoverageDebtCandidate]:
     """Return healthy native sources whose proven horizon is about to expire.
 
-    ``observed_horizon_hours`` is only a lower-bound observation.  The policy
-    therefore uses the median of recent positive lower bounds rather than a
-    configured lookback claim.  A source is eligible only when its latest
-    attempt is itself ``native_covered``; degraded routes become Route Debt and
-    cannot consume a Coverage Debt pre-emption slot.
+    ``observed_horizon_hours`` is only a lower-bound observation. The policy
+    therefore uses the minimum recent positive lower bound as the conservative
+    proven horizon, never a configured lookback claim. A source is eligible
+    only when its latest attempt is itself ``native_covered``; degraded routes
+    become Route Debt and cannot consume a Coverage Debt pre-emption slot.
     """
 
     projection = max(0.0, float(projection_hours))
@@ -114,8 +113,6 @@ def compute_coverage_debt_candidates(
         latest = rows[0]
         latest_route_status = str(latest.get("route_status", "") or "")
         if latest_route_status != "native_covered":
-            # Route health is a prerequisite.  Coverage scheduling must not
-            # repeatedly pre-empt capacity for a currently degraded route.
             continue
 
         successful = [
@@ -134,7 +131,7 @@ def compute_coverage_debt_candidates(
             continue
         current_age = max(0.0, (started - last_success).total_seconds() / 3600)
         projected_age = current_age + projection
-        proven_horizon = float(median(samples))
+        proven_horizon = min(samples)
         slack = proven_horizon - projected_age
         if slack > margin:
             continue
@@ -157,6 +154,5 @@ def compute_coverage_debt_candidates(
             )
         )
 
-    # Most negative slack is the most urgent deterministic blind-gap risk.
     result.sort(key=lambda item: (item.coverage_slack_hours, item.source_id))
     return result
