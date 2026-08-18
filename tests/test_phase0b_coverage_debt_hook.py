@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from longread_collector.pipeline_phase0b import Phase0BSourceSelectionHook
+from longread_collector.source_run_coverage import SOURCE_RUN_COVERAGE_VERSION
 from longread_collector.source_selection_phase0b import (
     SourceFreshnessPolicy,
     begin_source_selection,
@@ -32,6 +33,7 @@ def coverage(source_id: str, started: str, horizon: float, route="native_covered
         "run_started_at_bj": started,
         "route_status": route,
         "observed_horizon_hours": horizon,
+        "coverage_version": SOURCE_RUN_COVERAGE_VERSION,
     }
 
 
