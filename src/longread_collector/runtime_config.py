@@ -24,6 +24,14 @@ class CollectorRuntimeConfig:
     native_freshness_sources_by_group: dict[str, tuple[str, ...]] = field(
         default_factory=dict
     )
+    native_coverage_debt_policy_enabled: bool = False
+    native_coverage_debt_max_per_run: int = 1
+    native_coverage_debt_safety_margin_hours: float = 2.0
+    native_coverage_debt_min_samples: int = 2
+    native_coverage_debt_recent_samples: int = 5
+    native_coverage_debt_projection_hours_by_group: dict[str, float] = field(
+        default_factory=dict
+    )
     source_chase_max_per_run: int = 3
     source_chase_results_per_query: int = 4
     source_chase_freshness: str = "qdr:m"
@@ -41,6 +49,20 @@ def _as_int(
 ) -> int:
     try:
         parsed = int(float(value))
+    except (TypeError, ValueError):
+        return default
+    return min(max(parsed, minimum), maximum)
+
+
+def _as_float(
+    value: Any,
+    default: float,
+    *,
+    minimum: float = 0.0,
+    maximum: float = 1000.0,
+) -> float:
+    try:
+        parsed = float(value)
     except (TypeError, ValueError):
         return default
     return min(max(parsed, minimum), maximum)
@@ -84,6 +106,30 @@ def _as_source_groups(value: Any) -> dict[str, tuple[str, ...]]:
         else:
             continue
         result[group_id] = tuple(dict.fromkeys(values))
+    return result
+
+
+def _as_float_mapping(value: Any) -> dict[str, float]:
+    if isinstance(value, dict):
+        raw = value
+    else:
+        try:
+            raw = json.loads(str(value or "{}"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, float] = {}
+    for key, raw_value in raw.items():
+        group = str(key or "").strip()
+        if not group:
+            continue
+        try:
+            hours = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        if hours >= 0:
+            result[group] = min(hours, 168.0)
     return result
 
 
@@ -140,6 +186,27 @@ def load_collector_runtime_config(store: object) -> CollectorRuntimeConfig:
         ),
         native_freshness_sources_by_group=_as_source_groups(
             active.get("native_freshness_sources_by_group")
+        ),
+        native_coverage_debt_policy_enabled=_as_bool(
+            active.get("native_coverage_debt_policy_enabled"), False
+        ),
+        native_coverage_debt_max_per_run=_as_int(
+            active.get("native_coverage_debt_max_per_run"), 1, minimum=0, maximum=4
+        ),
+        native_coverage_debt_safety_margin_hours=_as_float(
+            active.get("native_coverage_debt_safety_margin_hours"),
+            2.0,
+            minimum=0.0,
+            maximum=24.0,
+        ),
+        native_coverage_debt_min_samples=_as_int(
+            active.get("native_coverage_debt_min_samples"), 2, minimum=1, maximum=10
+        ),
+        native_coverage_debt_recent_samples=_as_int(
+            active.get("native_coverage_debt_recent_samples"), 5, minimum=1, maximum=20
+        ),
+        native_coverage_debt_projection_hours_by_group=_as_float_mapping(
+            active.get("native_coverage_debt_projection_hours_by_group")
         ),
         source_chase_max_per_run=_as_int(
             active.get("source_chase_max_per_run"), 3, maximum=10
