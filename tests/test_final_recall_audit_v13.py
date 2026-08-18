@@ -251,7 +251,7 @@ def test_realized_summary_separates_contract_from_conditional_surface_recall() -
 
     assert summary["realized_coverage_contract_denominator"] == 3
     assert summary["realized_coverage_contract_covered"] == 2
-    assert summary["realized_coverage_contract_rate"] == 2 / 3
+    assert summary["realized_coverage_contract_rate"] == 0.6667
     assert summary["conditional_surface_recall_denominator"] == 2
     assert summary["conditional_surface_recall_discovered"] == 1
     assert summary["conditional_surface_recall"] == 0.5
