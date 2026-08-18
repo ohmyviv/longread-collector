@@ -38,9 +38,6 @@ class Store:
         return 0
 
     def append_collector_run(self, values) -> None:
-        # This is deliberately not the final sink in the real v0.5.6b path.
-        # The regression test proves that the direct GoogleSheetStore sink is
-        # still decorated by Phase 0B when v0.5.6b bypasses outer wrappers.
         raise AssertionError("unexpected instance-level final sink")
 
 
@@ -93,9 +90,6 @@ def _sources():
 
 
 def _exercise_scheduled_v06_path() -> None:
-    # Import release modules only inside a spawned child process. Several legacy
-    # modules intentionally install process-global compatibility hooks at import
-    # time; isolating this integration regression prevents test-order pollution.
     from longread_collector import (
         pipeline_phase0b,
         pipeline_v05,
@@ -169,10 +163,12 @@ def _exercise_scheduled_v06_path() -> None:
     persisted = dict(zip(RUN_HEADERS, pipeline.store.book.run_sheet.rows[0]))
     notes = str(persisted["notes"])
     assert notes.count("source_selection_policy_version=") == 1
-    assert "source_selection_policy_version=deadline-freshness-reserve-v0.6-phase0b.1" in notes
+    assert "source_selection_policy_version=deadline-freshness-coverage-debt-v0.6-phase0b.2" in notes
     assert "source_selection_policy_enabled=TRUE" in notes
     assert "source_selection_group=pre_report" in notes
     assert "source_selection_freshness=restofworld|quanta|propublica|wired|newyorker|atlantic" in notes
+    assert "source_selection_debt_enabled=FALSE" in notes
+    assert "source_selection_debt_selected=" in notes
     assert "restofworld:freshness_reserve:" in notes
     assert "atlantic:freshness_reserve:" in notes
     assert "war-on-the-rocks:coverage_rotation:" in notes
