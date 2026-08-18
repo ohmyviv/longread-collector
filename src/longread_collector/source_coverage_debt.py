@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Iterable
 
 from .final_recall_audit import _sheet_datetime
+from .source_run_coverage import SOURCE_RUN_COVERAGE_VERSION
 
 COVERAGE_DEBT_VERSION = "deadline-coverage-debt-v0.1"
 
@@ -78,6 +79,10 @@ def compute_coverage_debt_candidates(
     proven horizon, never a configured lookback claim. A source is eligible
     only when its latest attempt is itself ``native_covered``; degraded routes
     become Route Debt and cannot consume a Coverage Debt pre-emption slot.
+
+    Rows from older coverage-contract versions are ignored. This prevents a
+    later measurement-semantic tightening from silently mixing incompatible
+    horizon evidence into the same Debt calculation.
     """
 
     projection = max(0.0, float(projection_hours))
@@ -88,6 +93,8 @@ def compute_coverage_debt_candidates(
 
     rows_by_source: dict[str, list[dict[str, Any]]] = {}
     for row in coverage_rows:
+        if str(row.get("coverage_version", "") or "") != SOURCE_RUN_COVERAGE_VERSION:
+            continue
         source_id = str(row.get("source_id", "") or "").strip()
         row_started = _coverage_started(row, tz)
         if not source_id or row_started is None or row_started > started:
