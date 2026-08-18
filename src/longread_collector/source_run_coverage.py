@@ -9,7 +9,7 @@ from typing import Any, Iterable
 from dateutil import parser as date_parser
 
 SOURCE_RUN_COVERAGE_SHEET = "collector_source_run_coverage"
-SOURCE_RUN_COVERAGE_VERSION = "run-source-coverage-v0.1"
+SOURCE_RUN_COVERAGE_VERSION = "run-source-coverage-v0.2"
 
 SOURCE_RUN_COVERAGE_HEADERS = [
     "coverage_id",
