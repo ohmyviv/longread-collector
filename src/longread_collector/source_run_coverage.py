@@ -105,9 +105,13 @@ def _native_status(log: dict[str, Any] | None) -> str:
     return "failed"
 
 
-def _fallback_status(log: dict[str, Any] | None) -> str:
+def _fallback_status(
+    log: dict[str, Any] | None,
+    *,
+    expected: bool,
+) -> str:
     if log is None:
-        return "not_used"
+        return "attempted_unknown" if expected else "not_used"
     if not bool(log.get("success")):
         return "failed"
     if int(log.get("results_count") or 0) > 0:
@@ -134,8 +138,12 @@ def _route_status(
         return "native_covered" if dated_observation_count > 0 else "native_success_date_unknown"
     if fallback_status == "success":
         return "fallback_only"
-    if fallback_status in {"zero_results", "failed"}:
-        return "fallback_zero" if fallback_status == "zero_results" else "fallback_failed"
+    if fallback_status == "zero_results":
+        return "fallback_zero"
+    if fallback_status == "failed":
+        return "fallback_failed"
+    if fallback_status == "attempted_unknown":
+        return "fallback_unknown"
     if native_status == "zero_results":
         return "native_zero_results"
     if native_status == "failed":
@@ -214,7 +222,11 @@ def build_source_run_coverage_rows(
             else ""
         )
         native_state = _native_status(native_log)
-        fallback_state = _fallback_status(fallback_log)
+        fallback_expected = bool((native_log or {}).get("fallback_needed"))
+        fallback_state = _fallback_status(
+            fallback_log,
+            expected=fallback_expected,
+        )
         route_state = _route_status(
             native_status=native_state,
             fallback_status=fallback_state,
@@ -239,7 +251,7 @@ def build_source_run_coverage_rows(
                 "selected_method": str((native_log or {}).get("selected_method", "") or ""),
                 "selected_endpoint": str((native_log or {}).get("selected_endpoint", "") or ""),
                 "native_results_count": int((native_log or {}).get("results_count") or 0),
-                "fallback_attempted": "TRUE" if fallback_log is not None else "FALSE",
+                "fallback_attempted": "TRUE" if fallback_log is not None or fallback_expected else "FALSE",
                 "fallback_status": fallback_state,
                 "fallback_results_count": int((fallback_log or {}).get("results_count") or 0),
                 "route_status": route_state,
