@@ -79,7 +79,6 @@ jobs:
       - name: Preflight
         env:
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
-          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
           GOOGLE_SHEET_ID: 1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4
           GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
           TIMEZONE: Asia/Shanghai
@@ -91,7 +90,6 @@ jobs:
       - name: Collect and sync with v0.6 parallel shadow
         env:
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
-          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
           GOOGLE_SHEET_ID: 1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4
           GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
           TIMEZONE: Asia/Shanghai
