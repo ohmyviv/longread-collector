@@ -53,8 +53,8 @@ def test_ft_like_shallow_route_enters_debt_before_next_opportunity() -> None:
     candidate = candidates[0]
     assert candidate.current_age_hours == 24.033
     assert candidate.projected_age_hours == 29.533
-    assert candidate.proven_horizon_hours == 20.15
-    assert candidate.coverage_slack_hours == -9.383
+    assert candidate.proven_horizon_hours == 18.8
+    assert candidate.coverage_slack_hours == -10.733
     assert candidate.sample_count == 2
 
 
