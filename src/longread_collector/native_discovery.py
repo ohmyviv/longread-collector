@@ -148,7 +148,7 @@ def parse_parser_config(source: dict[str, Any]) -> dict[str, Any]:
         ["rss", "news_sitemap", "sitemap", "section_scan", "firecrawl_search"],
     )
     parsed.setdefault("section_urls", [])
-    parsed.setdefault("section_allow_subdomains", False)
+    parsed.setdefault("section_allowed_subdomains", [])
     return parsed
 
 
@@ -377,6 +377,40 @@ class _AnchorParser(HTMLParser):
             self._text = []
 
 
+def _normalize_allowed_host(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    if "://" in text:
+        host = urlsplit(text).netloc.lower()
+    else:
+        host = text.split("/", 1)[0]
+    return host.removeprefix("www.")
+
+
+def _section_allowed_subdomains(source: dict[str, Any]) -> set[str]:
+    domain = _source_domain(source)
+    if not domain:
+        return set()
+    raw = parse_parser_config(source).get("section_allowed_subdomains", [])
+    if isinstance(raw, str):
+        values = [
+            value.strip()
+            for value in raw.replace(",", "|").split("|")
+            if value.strip()
+        ]
+    elif isinstance(raw, (list, tuple, set)):
+        values = [str(value).strip() for value in raw if str(value).strip()]
+    else:
+        values = []
+    allowed: set[str] = set()
+    for value in values:
+        host = _normalize_allowed_host(value)
+        if host and host != domain and host.endswith(f".{domain}"):
+            allowed.add(host)
+    return allowed
+
+
 def _section_candidate_domain_allowed(
     source: dict[str, Any],
     candidate_domain: str,
@@ -387,10 +421,7 @@ def _section_candidate_domain_allowed(
         return False
     if candidate == domain:
         return True
-    config = parse_parser_config(source)
-    return _bool(config.get("section_allow_subdomains")) and candidate.endswith(
-        f".{domain}"
-    )
+    return candidate in _section_allowed_subdomains(source)
 
 
 def parse_section_html(
