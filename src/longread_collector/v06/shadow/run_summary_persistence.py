@@ -1,6 +1,6 @@
 """Durable, lightweight run summaries for the v0.6 parallel Shadow.
 
-The full Shadow payload remains an in-memory diagnostic return value.  This
+The full Shadow payload remains an in-memory diagnostic return value. This
 module persists only one compact row per natural Collector run so later audits
 can prove whether Shadow executed and how far it progressed without storing the
 full per-item/event payload.
@@ -33,6 +33,7 @@ SHADOW_RUN_SUMMARY_HEADERS = [
     "control_version",
     "source_selection_policy_version",
     "snapshot_persistence_version",
+    "snapshot_capture_error",
     "discovery_snapshot_count",
     "control_discovery_snapshot_count",
     "persisted_discovery_snapshot_count",
@@ -41,7 +42,16 @@ SHADOW_RUN_SUMMARY_HEADERS = [
     "full_snapshot_invariant",
     "control_acquired_count",
     "shared_body_count",
+    "shadow_item_count",
+    "shadow_event_count",
+    "shadow_event_digest_sha256",
     "l4_canonical_event_count",
+    "l4_technical_success_count",
+    "l4_flow_pass_count",
+    "l4_flow_reject_count",
+    "l4_flow_defer_count",
+    "l4_flow_action_required_count",
+    "l4_flow_error_count",
     "l5_editorial_event_count",
     "l5_recommend_count",
     "l5_consider_count",
@@ -108,6 +118,27 @@ def _event_stage_counts(events: Any) -> Counter[str]:
     return counts
 
 
+def _event_status_counts(
+    events: Any,
+    *,
+    stage: str,
+) -> tuple[Counter[str], Counter[str]]:
+    technical: Counter[str] = Counter()
+    flow: Counter[str] = Counter()
+    for event in events if isinstance(events, (list, tuple)) else ():
+        if not isinstance(event, dict):
+            continue
+        if str(event.get("stage", "") or "").strip() != stage:
+            continue
+        technical_status = str(event.get("technical_status", "") or "").strip()
+        flow_status = str(event.get("flow_status", "") or "").strip()
+        if technical_status:
+            technical[technical_status] += 1
+        if flow_status:
+            flow[flow_status] += 1
+    return technical, flow
+
+
 def _editorial_verdict_counts(items: Any) -> Counter[str]:
     counts: Counter[str] = Counter()
     for item in items if isinstance(items, (list, tuple)) else ():
@@ -140,11 +171,19 @@ def build_shadow_run_summary(
     run_id = str(collector_run_id or shadow_payload.get("run_id", "") or "").strip()
     summary_id = _summary_id(run_id)
     status = str(shadow_payload.get("status", "") or "unknown").strip()
-    stages = _event_stage_counts(shadow_payload.get("events"))
-    verdicts = _editorial_verdict_counts(shadow_payload.get("items"))
+    events = shadow_payload.get("events")
+    items = shadow_payload.get("items")
+    stages = _event_stage_counts(events)
+    l4_technical, l4_flow = _event_status_counts(events, stage="canonical")
+    verdicts = _editorial_verdict_counts(items)
     error_type, error_message = _error_parts(shadow_payload.get("error"))
     control_preserved = bool(
         shadow_payload.get("control_result_preserved", status == "success")
+    )
+    item_count = len(items) if isinstance(items, (list, tuple)) else 0
+    event_count = int(
+        shadow_payload.get("event_count")
+        or (len(events) if isinstance(events, (list, tuple)) else 0)
     )
 
     return {
@@ -163,6 +202,9 @@ def build_shadow_run_summary(
         "snapshot_persistence_version": str(
             shadow_payload.get("snapshot_persistence_version", "") or ""
         ),
+        "snapshot_capture_error": str(
+            shadow_payload.get("snapshot_capture_error", "") or ""
+        )[:1800],
         "discovery_snapshot_count": int(
             shadow_payload.get("discovery_snapshot_count") or 0
         ),
@@ -181,7 +223,18 @@ def build_shadow_run_summary(
         ),
         "control_acquired_count": int(shadow_payload.get("control_acquired_count") or 0),
         "shared_body_count": int(shadow_payload.get("shared_body_count") or 0),
+        "shadow_item_count": item_count,
+        "shadow_event_count": event_count,
+        "shadow_event_digest_sha256": str(
+            shadow_payload.get("event_digest_sha256", "") or ""
+        ),
         "l4_canonical_event_count": int(stages.get("canonical", 0)),
+        "l4_technical_success_count": int(l4_technical.get("success", 0)),
+        "l4_flow_pass_count": int(l4_flow.get("pass", 0)),
+        "l4_flow_reject_count": int(l4_flow.get("reject", 0)),
+        "l4_flow_defer_count": int(l4_flow.get("defer", 0)),
+        "l4_flow_action_required_count": int(l4_flow.get("action_required", 0)),
+        "l4_flow_error_count": int(l4_flow.get("error", 0)),
         "l5_editorial_event_count": int(stages.get("editorial", 0)),
         "l5_recommend_count": int(verdicts.get("recommend", 0)),
         "l5_consider_count": int(verdicts.get("consider", 0)),

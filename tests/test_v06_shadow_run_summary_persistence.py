@@ -74,6 +74,7 @@ def _success_payload() -> dict[str, object]:
         "control_version": "collector-v0.5.6m",
         "source_selection_policy_version": "deadline-freshness-reserve-v0.6-phase0b.1",
         "snapshot_persistence_version": "snapshot-persistence-v0.6-pr7.3.5",
+        "snapshot_capture_error": "",
         "status": "success",
         "run_id": "COL-20260818-181236-BJT-zh_evening",
         "group_id": "zh_evening",
@@ -93,8 +94,14 @@ def _success_payload() -> dict[str, object]:
         "v06_selected_count": 3,
         "v06_source_chase_count": 2,
         "gate_action_counts": {"acquire": 20, "defer": 120, "hard_reject": 4},
-        "v06_policy_action_counts": {"select_standard": 3, "source_chase": 2, "defer": 139},
+        "v06_policy_action_counts": {
+            "select_standard": 3,
+            "source_chase": 2,
+            "defer": 139,
+        },
         "difference_tag_counts": {"policy_action_disagreement": 5},
+        "event_count": 10,
+        "event_digest_sha256": "a" * 64,
         "items": [
             {"v06_editorial_verdict": "recommend"},
             {"v06_editorial_verdict": "recommend"},
@@ -105,16 +112,16 @@ def _success_payload() -> dict[str, object]:
             {"v06_editorial_verdict": ""},
         ],
         "events": [
-            {"stage": "discovery"},
-            {"stage": "canonical"},
-            {"stage": "canonical"},
-            {"stage": "editorial"},
-            {"stage": "editorial"},
-            {"stage": "editorial"},
-            {"stage": "selection"},
-            {"stage": "selection"},
-            {"stage": "selection"},
-            {"stage": "selection"},
+            {"stage": "discovery", "technical_status": "success", "flow_status": "pass"},
+            {"stage": "canonical", "technical_status": "success", "flow_status": "pass"},
+            {"stage": "canonical", "technical_status": "success", "flow_status": "reject"},
+            {"stage": "editorial", "technical_status": "success", "flow_status": "pass"},
+            {"stage": "editorial", "technical_status": "success", "flow_status": "defer"},
+            {"stage": "editorial", "technical_status": "success", "flow_status": "reject"},
+            {"stage": "selection", "technical_status": "success", "flow_status": "pass"},
+            {"stage": "selection", "technical_status": "success", "flow_status": "pass"},
+            {"stage": "selection", "technical_status": "success", "flow_status": "defer"},
+            {"stage": "selection", "technical_status": "success", "flow_status": "reject"},
         ],
     }
 
@@ -129,7 +136,16 @@ def test_success_summary_preserves_stage_counts_and_invariants_without_full_payl
     )
 
     assert row["status"] == "success"
+    assert row["shadow_item_count"] == 7
+    assert row["shadow_event_count"] == 10
+    assert row["shadow_event_digest_sha256"] == "a" * 64
     assert row["l4_canonical_event_count"] == 2
+    assert row["l4_technical_success_count"] == 2
+    assert row["l4_flow_pass_count"] == 1
+    assert row["l4_flow_reject_count"] == 1
+    assert row["l4_flow_defer_count"] == 0
+    assert row["l4_flow_action_required_count"] == 0
+    assert row["l4_flow_error_count"] == 0
     assert row["l5_editorial_event_count"] == 3
     assert row["l5_recommend_count"] == 2
     assert row["l5_consider_count"] == 1
@@ -174,7 +190,11 @@ def test_failed_open_summary_persists_error_boundary_without_inventing_stage_cou
     assert row["status"] == "failed_open"
     assert row["error_type"] == "ValueError"
     assert row["error_message"] == "canonical evidence malformed"
+    assert row["shadow_item_count"] == 0
+    assert row["shadow_event_count"] == 0
     assert row["l4_canonical_event_count"] == 0
+    assert row["l4_technical_success_count"] == 0
+    assert row["l4_flow_error_count"] == 0
     assert row["l5_editorial_event_count"] == 0
     assert row["l6_selection_event_count"] == 0
     assert row["full_snapshot_invariant"] == "FALSE"
