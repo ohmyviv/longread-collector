@@ -22,6 +22,11 @@ from .source_chase_identity_v056j import (
     reject_source_chase_mismatch,
 )
 from .source_registry_metrics import update_source_registry_metrics
+from .source_run_coverage import (
+    SOURCE_RUN_COVERAGE_VERSION,
+    build_source_run_coverage_rows,
+    persist_source_run_coverage_fail_open,
+)
 from .extraction import FallbackBudget
 
 
@@ -110,6 +115,43 @@ class NativeCollectorPipeline(CollectorPipeline):
             )
             summary["native_items_discovered"] = len(native_items)
             summary["native_fallback_sources"] = len(fallback_sources)
+
+            coverage_persistence: dict[str, Any]
+            try:
+                coverage_rows = build_source_run_coverage_rows(
+                    run_id=run_id,
+                    query_group=group_id or "all",
+                    started=started,
+                    selected_sources=selected_sources,
+                    native_logs=native_logs,
+                    native_items=native_items,
+                    firecrawl_logs=firecrawl_logs,
+                    firecrawl_items=firecrawl_items,
+                    persisted_at=datetime.now(self.tz),
+                )
+                coverage_persistence = persist_source_run_coverage_fail_open(
+                    self.store,
+                    coverage_rows,
+                )
+                coverage_persistence["rows_built"] = len(coverage_rows)
+            except Exception as coverage_exc:
+                coverage_persistence = {
+                    "persisted": False,
+                    "error": f"{type(coverage_exc).__name__}: {coverage_exc}"[:1000],
+                    "inserted": 0,
+                    "updated": 0,
+                    "total": 0,
+                    "rows_built": 0,
+                }
+            summary["source_run_coverage_persisted"] = bool(
+                coverage_persistence.get("persisted")
+            )
+            summary["source_run_coverage_rows"] = int(
+                coverage_persistence.get("rows_built") or 0
+            )
+            summary["source_run_coverage_error"] = str(
+                coverage_persistence.get("error", "") or ""
+            )
 
             initial_discovered_count = len(discovered)
             discovered_domains = {
@@ -310,6 +352,7 @@ class NativeCollectorPipeline(CollectorPipeline):
                 for log in native_logs
                 if log.get("success")
             )
+            coverage_error = str(summary.get("source_run_coverage_error", "") or "")
             summary["notes"] = (
                 f"classification_version=collector-v0.4.0; "
                 f"discovery_version=collector-v0.5.0-shadow; "
@@ -333,7 +376,11 @@ class NativeCollectorPipeline(CollectorPipeline):
                 f"prefilter_rejected={len(all_rejections)}; "
                 f"prefilter_reasons={dict(rejection_counts)}; "
                 f"discovery_failures={sum(not log.get('success', False) for log in discovery_logs)}; "
-                f"source_chase_failures={sum(not log.get('success', False) for log in chase_logs)}"
+                f"source_chase_failures={sum(not log.get('success', False) for log in chase_logs)}; "
+                f"source_run_coverage_version={SOURCE_RUN_COVERAGE_VERSION}; "
+                f"source_run_coverage_persisted={str(bool(summary.get('source_run_coverage_persisted'))).upper()}; "
+                f"source_run_coverage_rows={summary.get('source_run_coverage_rows', 0)}; "
+                f"source_run_coverage_error={coverage_error}"
             )
         except Exception as exc:
             summary["final_status"] = "failed"
