@@ -43,6 +43,9 @@ SOURCE_RUN_COVERAGE_HEADERS = [
 ]
 
 _DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_SECTION_CLOCK_KEY = "section_publication_clock_iso"
+_SECTION_CLOCK_SOURCE_KEY = "section_publication_clock_source"
+_SECTION_CLOCK_SOURCE = "section_relative_day_clock"
 
 
 def _column_name(column_number: int) -> str:
@@ -75,9 +78,9 @@ def _coverage_boundary(value: Any, parsed: datetime, started: datetime) -> datet
     """Return the oldest instant that the observation can safely prove covered.
 
     A date-only value such as ``2026-08-17`` does not prove that the article was
-    available at 00:00.  Its latest possible publication instant is the end of
+    available at 00:00. Its latest possible publication instant is the end of
     that calendar day, so the conservative lower-bound boundary is the next
-    day's midnight.  If the scan occurs before that boundary, the observation
+    day's midnight. If the scan occurs before that boundary, the observation
     proves zero lookback hours and the run start itself becomes the boundary.
 
     Timestamp-precision evidence keeps its literal instant.
@@ -106,6 +109,19 @@ def _item_source_id(item: Any) -> str:
 
 
 def _item_published_at(item: Any) -> Any:
+    """Return publication evidence for coverage measurement only.
+
+    Section publication clocks live in dedicated metadata so they cannot alter
+    Control freshness filtering/ranking. Coverage telemetry may consume that
+    exact list-page observation when its provenance is explicit. All other
+    routes retain the historical ``DiscoveredURL.published_at`` behavior.
+    """
+
+    metadata = getattr(item, "metadata", None) or {}
+    section_clock = str(metadata.get(_SECTION_CLOCK_KEY, "") or "").strip()
+    section_source = str(metadata.get(_SECTION_CLOCK_SOURCE_KEY, "") or "").strip()
+    if section_clock and section_source == _SECTION_CLOCK_SOURCE:
+        return section_clock
     return getattr(item, "published_at", "")
 
 
@@ -251,7 +267,7 @@ def build_source_run_coverage_rows(
         literal_dates = [parsed for parsed, _ in dated]
         coverage_boundaries = [boundary for _, boundary in dated]
         # The persisted oldest value is deliberately the conservative coverage
-        # boundary because v1.3 consumes it as interval evidence.  For exact
+        # boundary because v1.3 consumes it as interval evidence. For exact
         # timestamps it equals the literal publication instant; for date-only
         # evidence it moves to the next-day boundary and therefore cannot
         # overstate proven route coverage.
