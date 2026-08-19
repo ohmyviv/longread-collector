@@ -28,6 +28,10 @@ from .publication_date_v056m import (
     BODY_DATE_VERSION,
     extract_body_publication_date_v056m,
 )
+from .section_publication_time_v056 import (
+    SECTION_PUBLICATION_TIME_VERSION,
+    install_section_publication_time_observability,
+)
 from .staged_reserve_v056m import (
     STAGED_RESERVE_VERSION,
     build_second_stage_v056m,
@@ -45,6 +49,11 @@ _pipeline_v051._ORIGINAL_EXTRACT_ARTICLE = extract_article_v056m
 _pipeline_v056b._core_filter = filter_discovered_v056m
 _pipeline_v056b.split_first_stage = split_first_stage
 _pipeline_v056b.build_second_stage = build_second_stage_v056m
+
+# Observe list-page publication clocks only in dedicated telemetry metadata.
+# The observer deliberately does not populate DiscoveredURL.published_at, so
+# freshness selection and ranking semantics remain unchanged.
+install_section_publication_time_observability()
 
 # v0.5.6d's inherited methods also resolve module globals at runtime. Point the
 # final classification/date/terminal projection to the v0.5.6m implementations.
@@ -73,7 +82,8 @@ _RELEASE_MARKER = (
     f"page_gate_policy_version={PAGE_GATE_POLICY_VERSION}; "
     f"staged_reserve_version={STAGED_RESERVE_VERSION}; "
     f"extraction_version={EXTRACTION_VERSION}; "
-    f"direct_html_version={DIRECT_HTML_VERSION}"
+    f"direct_html_version={DIRECT_HTML_VERSION}; "
+    f"section_publication_time_version={SECTION_PUBLICATION_TIME_VERSION}"
 )
 if _RELEASE_MARKER not in _pipeline_v056b._SELECTION_MARKER:
     _pipeline_v056b._SELECTION_MARKER = (
@@ -101,6 +111,7 @@ class NativeCollectorPipeline(_BasePipeline):
                 "staged_reserve_version": STAGED_RESERVE_VERSION,
                 "extraction_version": EXTRACTION_VERSION,
                 "direct_html_version": DIRECT_HTML_VERSION,
+                "section_publication_time_version": SECTION_PUBLICATION_TIME_VERSION,
             }
         )
         return result
