@@ -19,6 +19,7 @@ from longread_collector.final_recall_audit_v131 import (
     strict_summary,
 )
 
+# CI synchronize marker only; no test or production logic change.
 TZ = ZoneInfo("Asia/Shanghai")
 FIXTURE = Path(__file__).parent / "fixtures" / "final_recall_v131_phase2_replay.json.gz.b64"
 
