@@ -102,6 +102,11 @@ jobs:
           V06_PRIMARY_ENABLED: 'false'
           AUTO_PROMOTE_WHEN_READY: 'false'
           EDITOR_0735_CONNECTED: 'false'
+          # Phase 3 S1: paired first-party metadata observation only. Treatment
+          # uses the exact naturally selected Chinese sources and cannot enter
+          # candidate selection, body extraction, article_cache or the Editor.
+          ZH_ROUTE_SHADOW_ENABLED: 'true'
+          ZH_ROUTE_SHADOW_BODY_MODE: metadata_only
         shell: bash
         run: |
           set -o pipefail
