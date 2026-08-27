@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,17 @@ from ...recall_instrumentation import (
     current_snapshot_capture,
     end_snapshot_capture,
 )
+from ...zh_route_shadow_discovery_v1 import (
+    ROUTE_SHADOW_DISCOVERY_VERSION,
+    begin_zh_route_shadow,
+    current_zh_route_shadow_state,
+    end_zh_route_shadow,
+    install_paired_zh_route_shadow_discovery,
+)
+from ...zh_route_shadow_telemetry_v1 import (
+    ROUTE_SHADOW_TELEMETRY_VERSION,
+    persist_zh_route_shadow_fail_open,
+)
 from ..contracts import RunContext
 from .comparison import PARALLEL_SHADOW_VERSION
 from .run_summary_persistence import (
@@ -27,10 +39,18 @@ from .snapshot_persistence_phase0a import (
     install_snapshot_persistence_invariant,
 )
 
-PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.9"
+PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.10"
 LEGACY_CONTROL_VERSION = "collector-v0.5.6m"
 
 install_snapshot_persistence_invariant()
+install_paired_zh_route_shadow_discovery()
+
+
+def _env_true(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
@@ -58,6 +78,11 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
         group = str(group_id or "all")
         self._v06_acquired_pairs = []
         snapshot_token = begin_snapshot_capture(group)
+        route_shadow_enabled = _env_true("ZH_ROUTE_SHADOW_ENABLED", default=False)
+        route_shadow_token = begin_zh_route_shadow(
+            enabled=route_shadow_enabled,
+            group_id=group,
+        )
         snapshot = current_snapshot_capture()
         if snapshot is not None:
             snapshot.snapshot_readback_required = True
@@ -180,6 +205,81 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
                 summary_persistence.get("error", "") or ""
             )
 
+            # Chinese route Treatment is a metadata-only sidecar attached to the
+            # exact naturally selected Control sources.  Its discovery ran
+            # immediately after native Control discovery and before extraction.
+            # Durable rows are written only now, after the authoritative Control
+            # run returned successfully, so failed Control runs cannot leave
+            # promotion-looking route evidence.
+            route_state = current_zh_route_shadow_state()
+            route_report = route_state.report if route_state is not None else None
+            if not route_shadow_enabled:
+                route_payload: dict[str, Any] = {
+                    "version": ROUTE_SHADOW_DISCOVERY_VERSION,
+                    "telemetry_version": ROUTE_SHADOW_TELEMETRY_VERSION,
+                    "status": "disabled",
+                    "control_result_preserved": True,
+                    "body_requests": 0,
+                }
+                route_persistence = {
+                    "persisted": False,
+                    "error": "disabled",
+                    "route_rows": 0,
+                    "item_rows": 0,
+                }
+            elif not group.startswith("zh_"):
+                route_payload = {
+                    "version": ROUTE_SHADOW_DISCOVERY_VERSION,
+                    "telemetry_version": ROUTE_SHADOW_TELEMETRY_VERSION,
+                    "status": "non_zh_group_skipped",
+                    "control_result_preserved": True,
+                    "body_requests": 0,
+                }
+                route_persistence = {
+                    "persisted": False,
+                    "error": "non_zh_group_skipped",
+                    "route_rows": 0,
+                    "item_rows": 0,
+                }
+            elif route_report is not None:
+                route_payload = route_report.as_dict()
+                route_payload["telemetry_version"] = ROUTE_SHADOW_TELEMETRY_VERSION
+                route_payload["control_result_preserved"] = True
+                route_persistence = persist_zh_route_shadow_fail_open(
+                    getattr(self, "store", None),
+                    route_report,
+                    collector_run_id=context.run_id,
+                    persisted_at=datetime.now(self.tz),
+                )
+            else:
+                route_payload = {
+                    "version": ROUTE_SHADOW_DISCOVERY_VERSION,
+                    "telemetry_version": ROUTE_SHADOW_TELEMETRY_VERSION,
+                    "status": "failed_open" if route_state and route_state.error else "no_report",
+                    "error": route_state.error if route_state else "",
+                    "control_result_preserved": True,
+                    "body_requests": 0,
+                }
+                route_persistence = {
+                    "persisted": False,
+                    "error": str(route_payload.get("error") or "no_report"),
+                    "route_rows": 0,
+                    "item_rows": 0,
+                }
+
+            route_payload["telemetry_persisted"] = bool(
+                route_persistence.get("persisted")
+            )
+            route_payload["telemetry_error"] = str(
+                route_persistence.get("error", "") or ""
+            )
+            route_payload["route_rows_persisted"] = int(
+                route_persistence.get("route_rows") or 0
+            )
+            route_payload["item_rows_persisted"] = int(
+                route_persistence.get("item_rows") or 0
+            )
+
             legacy_result["v06_shadow"] = shadow_payload
             legacy_result["v06_shadow_version"] = PARALLEL_SHADOW_PIPELINE_VERSION
             legacy_result["v06_shadow_control_version"] = LEGACY_CONTROL_VERSION
@@ -196,8 +296,15 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
             legacy_result["v06_shadow_run_summary_error"] = str(
                 summary_persistence.get("error", "") or ""
             )
+            legacy_result["zh_route_shadow"] = route_payload
+            legacy_result["zh_route_shadow_enabled"] = route_shadow_enabled
+            legacy_result["zh_route_shadow_version"] = ROUTE_SHADOW_DISCOVERY_VERSION
+            legacy_result["zh_route_shadow_telemetry_version"] = (
+                ROUTE_SHADOW_TELEMETRY_VERSION
+            )
             return legacy_result
         finally:
+            end_zh_route_shadow(route_shadow_token)
             end_snapshot_capture(snapshot_token)
             self._v06_acquired_pairs = []
 
