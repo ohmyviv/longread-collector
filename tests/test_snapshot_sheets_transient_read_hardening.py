@@ -28,8 +28,8 @@ class FakeSheetError(RuntimeError):
 
 
 class FakeWorksheet:
-    def __init__(self, header: list[str]) -> None:
-        self.rows: list[list[object]] = [list(header)]
+    def __init__(self, header: list[str] | None) -> None:
+        self.rows: list[list[object]] = [list(header)] if header is not None else []
         self.row_values_calls = 0
         self.col_values_calls = 0
         self.append_rows_calls = 0
@@ -80,12 +80,7 @@ class FakeBook:
 
     def add_worksheet(self, *, title: str, rows: int, cols: int):
         self.add_calls.append(title)
-        header = (
-            recall.SNAPSHOT_HEADERS
-            if title == "collector_discovery_snapshot"
-            else SNAPSHOT_OVERFLOW_HEADERS
-        )
-        ws = FakeWorksheet(header=[])
+        ws = FakeWorksheet(header=None)
         self.sheets[title] = ws
         return ws
 
