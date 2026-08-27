@@ -39,7 +39,9 @@ from .snapshot_persistence_phase0a import (
     install_snapshot_persistence_invariant,
 )
 
-PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.10"
+# S1 is a separate metadata-only observation sidecar. It does not change v0.6
+# L4/L5/selection semantics, so the semantic runtime version remains frozen.
+PARALLEL_SHADOW_PIPELINE_VERSION = "collector-v0.6-pr7.3.9"
 LEGACY_CONTROL_VERSION = "collector-v0.5.6m"
 
 install_snapshot_persistence_invariant()
@@ -185,10 +187,6 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
                     "full_snapshot_invariant": False,
                 }
 
-            # Persist only a compact run-level projection. This happens after
-            # Shadow has finished (or failed open), so persistence cannot alter
-            # any Gate/Canonical/Editorial/Selection decision. Missing/unready
-            # storage is itself an observability failure and remains fail-open.
             summary_persistence = persist_shadow_run_summary_from_payload_fail_open(
                 getattr(self, "store", None),
                 shadow_payload,
@@ -205,12 +203,9 @@ class ParallelShadowCollectorPipeline(LegacyV056mPipeline):
                 summary_persistence.get("error", "") or ""
             )
 
-            # Chinese route Treatment is a metadata-only sidecar attached to the
-            # exact naturally selected Control sources.  Its discovery ran
-            # immediately after native Control discovery and before extraction.
-            # Durable rows are written only now, after the authoritative Control
-            # run returned successfully, so failed Control runs cannot leave
-            # promotion-looking route evidence.
+            # Treatment discovery happened immediately after Control native
+            # discovery and before extraction. Durable route rows are written
+            # only after the authoritative Control run returns successfully.
             route_state = current_zh_route_shadow_state()
             route_report = route_state.report if route_state is not None else None
             if not route_shadow_enabled:
