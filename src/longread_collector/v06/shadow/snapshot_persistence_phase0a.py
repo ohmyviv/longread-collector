@@ -53,8 +53,11 @@ def _ensure_snapshot_sheet_with_retry(store: Any) -> Any:
         ws = _retry_sheet_call(
             lambda: store.book.worksheet("collector_discovery_snapshot")
         )
-    except WorksheetNotFound:
-        # Creation is deliberately single-attempt. Retrying an ambiguous create
+    except (WorksheetNotFound, KeyError):
+        # gspread raises WorksheetNotFound; small mapping-style adapters and
+        # historical test doubles use KeyError for the same missing-title
+        # condition. No other exception is converted into sheet absence.
+        # Creation is deliberately single-attempt: retrying an ambiguous create
         # could produce a duplicate worksheet with the same intended identity.
         ws = store.book.add_worksheet(
             title="collector_discovery_snapshot",
@@ -78,7 +81,9 @@ def _ensure_overflow_sheet_with_retry(store: Any) -> Any:
 
     try:
         ws = _retry_sheet_call(lambda: store.book.worksheet(SNAPSHOT_OVERFLOW_SHEET))
-    except WorksheetNotFound:
+    except (WorksheetNotFound, KeyError):
+        # Keep the same narrow missing-sheet compatibility as the main snapshot
+        # resolver; transient API errors have already been handled by retry.
         # As above, keep non-idempotent creation/header append single-attempt.
         ws = store.book.add_worksheet(
             title=SNAPSHOT_OVERFLOW_SHEET,
