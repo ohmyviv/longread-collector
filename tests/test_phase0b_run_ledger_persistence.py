@@ -28,6 +28,11 @@ class Store:
     def __init__(self) -> None:
         self.book = Book()
 
+    def _worksheet(self, name: str):
+        # GoogleSheetStore now routes worksheet lookup through a transient-retry
+        # helper. Keep this integration double faithful to that internal surface.
+        return self.book.worksheet(name)
+
     def load_queries(self, group_id=None):
         return []
 

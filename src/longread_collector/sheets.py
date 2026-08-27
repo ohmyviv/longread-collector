@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable, TypeVar
 from zoneinfo import ZoneInfo
 
 import gspread
@@ -57,6 +58,57 @@ SOURCE_HEADERS = [
     "notes", "updated_at_bj",
 ]
 
+SHEET_RETRY_DELAYS_SECONDS = (1.0, 2.0, 4.0)
+SHEET_RETRYABLE_STATUS_CODES = {429, 503}
+T = TypeVar("T")
+
+
+def _sheet_http_status(exc: BaseException) -> int | None:
+    response = getattr(exc, "response", None)
+    for candidate in (response, exc):
+        if candidate is None:
+            continue
+        for attr in ("status_code", "status", "code"):
+            value = getattr(candidate, attr, None)
+            try:
+                if value is not None:
+                    return int(value)
+            except (TypeError, ValueError):
+                continue
+    text = str(exc).lower()
+    if "resource_exhausted" in text or "quota exceeded" in text:
+        return 429
+    if "service unavailable" in text:
+        return 503
+    return None
+
+
+def _is_retryable_sheet_error(exc: BaseException) -> bool:
+    return _sheet_http_status(exc) in SHEET_RETRYABLE_STATUS_CODES
+
+
+def _retry_sheet_call(
+    operation: Callable[[], T],
+    *,
+    delays: tuple[float, ...] = SHEET_RETRY_DELAYS_SECONDS,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> T:
+    """Retry only transient Google Sheets quota/service failures.
+
+    The helper is intentionally used for reads and idempotent writes. Blind
+    retries of append-only writes can duplicate durable evidence after an
+    ambiguous network response, so append callers opt in separately.
+    """
+
+    for attempt in range(len(delays) + 1):
+        try:
+            return operation()
+        except Exception as exc:
+            if not _is_retryable_sheet_error(exc) or attempt >= len(delays):
+                raise
+            sleep_fn(delays[attempt])
+    raise RuntimeError("unreachable")
+
 
 class GoogleSheetStore:
     def __init__(self, settings: Settings) -> None:
@@ -64,12 +116,17 @@ class GoogleSheetStore:
             str(settings.google_service_account_file), scopes=SCOPES
         )
         self.client = gspread.authorize(creds)
-        self.book = self.client.open_by_key(settings.google_sheet_id)
+        self.book = _retry_sheet_call(
+            lambda: self.client.open_by_key(settings.google_sheet_id)
+        )
         self.settings = settings
         self.tz = ZoneInfo(settings.timezone)
 
     def _now(self) -> datetime:
         return datetime.now(self.tz)
+
+    def _worksheet(self, title: str) -> gspread.Worksheet:
+        return _retry_sheet_call(lambda: self.book.worksheet(title))
 
     def health_check(self) -> dict[str, Any]:
         required = {
@@ -77,13 +134,15 @@ class GoogleSheetStore:
             "collector_queries", "collector_config", "collector_health", "collector_ground_truth",
             "collector_evaluations", "collector_shadow_ab",
         }
-        actual = {ws.title for ws in self.book.worksheets()}
+        actual = {ws.title for ws in _retry_sheet_call(self.book.worksheets)}
         missing = sorted(required - actual)
         return {"spreadsheet_title": self.book.title, "missing_sheets": missing, "ok": not missing}
 
     def load_queries(self, group_id: str | None = None) -> list[dict[str, Any]]:
-        ws = self.book.worksheet("collector_queries")
-        rows = ws.get_all_records(expected_headers=QUERY_HEADERS)
+        ws = self._worksheet("collector_queries")
+        rows = _retry_sheet_call(
+            lambda: ws.get_all_records(expected_headers=QUERY_HEADERS)
+        )
         result: list[dict[str, Any]] = []
         for row in rows:
             enabled = str(row.get("enabled", "")).strip().upper() in {"TRUE", "1", "YES", "Y"}
@@ -106,8 +165,10 @@ class GoogleSheetStore:
         return sorted(result, key=lambda x: (str(x.get("group_id", "")), int(x.get("sequence", 0))))
 
     def load_source_registry(self, language: str | None = None) -> list[dict[str, Any]]:
-        ws = self.book.worksheet("source_registry")
-        rows = ws.get_all_records(expected_headers=SOURCE_HEADERS)
+        ws = self._worksheet("source_registry")
+        rows = _retry_sheet_call(
+            lambda: ws.get_all_records(expected_headers=SOURCE_HEADERS)
+        )
         result: list[dict[str, Any]] = []
         for row in rows:
             enabled = str(row.get("enabled", "")).strip().upper() in {"TRUE", "1", "YES", "Y"}
@@ -133,13 +194,15 @@ class GoogleSheetStore:
         )
 
     def existing_article_ids(self) -> dict[str, int]:
-        ws = self.book.worksheet("article_cache")
-        values = ws.col_values(1)
+        ws = self._worksheet("article_cache")
+        values = _retry_sheet_call(lambda: ws.col_values(1))
         return {value: index + 1 for index, value in enumerate(values[1:], start=1) if value}
 
     def existing_sources_30d(self) -> set[str]:
-        ws = self.book.worksheet("article_cache")
-        rows = ws.get_all_records(expected_headers=ARTICLE_HEADERS)
+        ws = self._worksheet("article_cache")
+        rows = _retry_sheet_call(
+            lambda: ws.get_all_records(expected_headers=ARTICLE_HEADERS)
+        )
         threshold = self._now() - timedelta(days=30)
         result: set[str] = set()
         for row in rows:
@@ -157,9 +220,57 @@ class GoogleSheetStore:
                 result.add(source)
         return result
 
+    def _article_cache_state(
+        self,
+        ws: gspread.Worksheet,
+    ) -> tuple[dict[str, int], set[str], dict[str, list[str]]]:
+        """Load article-cache identity, 30d sources and existing rows once.
+
+        This replaces the previous two full/column reads plus one ``row_values``
+        request for every existing article in an upsert batch.
+        """
+
+        values = _retry_sheet_call(ws.get_all_values)
+        if not values:
+            return {}, set(), {}
+        header = list(values[0])
+        if header != ARTICLE_HEADERS:
+            raise ValueError(
+                "article_cache header mismatch: "
+                f"expected {len(ARTICLE_HEADERS)} columns, got {len(header)}"
+            )
+        id_index = ARTICLE_HEADERS.index("article_id")
+        source_index = ARTICLE_HEADERS.index("canonical_source")
+        discovered_index = ARTICLE_HEADERS.index("discovered_at_bj")
+        threshold = self._now() - timedelta(days=30)
+        id_rows: dict[str, int] = {}
+        existing_rows: dict[str, list[str]] = {}
+        known_sources: set[str] = set()
+        for row_no, raw in enumerate(values[1:], start=2):
+            row = list(raw)
+            article_id = row[id_index].strip() if len(row) > id_index else ""
+            if article_id:
+                id_rows[article_id] = row_no
+                existing_rows[article_id] = row
+            source = row[source_index].strip() if len(row) > source_index else ""
+            if not source:
+                continue
+            discovered = row[discovered_index].strip() if len(row) > discovered_index else ""
+            try:
+                dt = datetime.fromisoformat(discovered.replace(" ", "T"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=self.tz)
+                if dt >= threshold:
+                    known_sources.add(source)
+            except ValueError:
+                known_sources.add(source)
+        return id_rows, known_sources, existing_rows
+
     def count_firecrawl_scrapes_today(self) -> int:
-        ws = self.book.worksheet("extraction_log")
-        rows = ws.get_all_records(expected_headers=EXTRACTION_HEADERS)
+        ws = self._worksheet("extraction_log")
+        rows = _retry_sheet_call(
+            lambda: ws.get_all_records(expected_headers=EXTRACTION_HEADERS)
+        )
         today = self._now().strftime("%Y-%m-%d")
         return sum(
             1 for row in rows
@@ -175,9 +286,8 @@ class GoogleSheetStore:
     ) -> int:
         pair_list = list(pairs)
         apply_batch_duplicate_clusters(article for _, article in pair_list)
-        ws = self.book.worksheet("article_cache")
-        id_rows = self.existing_article_ids()
-        known_sources = self.existing_sources_30d()
+        ws = self._worksheet("article_cache")
+        id_rows, known_sources, existing_rows = self._article_cache_state(ws)
         now = self._now()
         new_rows: list[list[object]] = []
         updates: list[tuple[int, list[object]]] = []
@@ -210,7 +320,7 @@ class GoogleSheetStore:
             ]
             if article.article_id in id_rows:
                 existing_row = id_rows[article.article_id]
-                current = ws.row_values(existing_row)
+                current = existing_rows.get(article.article_id, [])
                 if len(current) >= 33:
                     row[27] = current[27] or row[27]
                     row[30] = current[30] if len(current) > 30 else ""
@@ -220,18 +330,26 @@ class GoogleSheetStore:
             else:
                 new_rows.append(row)
             written += 1
+
+        # Appends remain single-attempt: blindly retrying an append after an
+        # ambiguous 503 can duplicate a durable article row. The main quota
+        # reduction comes from the single cache read and batched idempotent
+        # updates below.
         if new_rows:
             ws.append_rows(new_rows, value_input_option="USER_ENTERED", table_range="A:AV")
-        for row_no, row in updates:
-            ws.update(
-                range_name=f"A{row_no}:AV{row_no}",
-                values=[row],
-                value_input_option="USER_ENTERED",
+
+        if updates:
+            batch = [
+                {"range": f"A{row_no}:AV{row_no}", "values": [row]}
+                for row_no, row in updates
+            ]
+            _retry_sheet_call(
+                lambda: ws.batch_update(batch, value_input_option="USER_ENTERED")
             )
         return written
 
     def append_extraction_logs(self, articles: Iterable[ExtractedArticle]) -> None:
-        ws = self.book.worksheet("extraction_log")
+        ws = self._worksheet("extraction_log")
         now_dt = self._now()
         now = now_dt.strftime("%Y-%m-%d %H:%M:%S")
         rows: list[list[object]] = []
@@ -251,19 +369,42 @@ class GoogleSheetStore:
             ws.append_rows(rows, value_input_option="USER_ENTERED", table_range="A:Q")
 
     def append_collector_run(self, values: dict[str, object]) -> None:
-        ws = self.book.worksheet("collector_runs")
-        ws.append_row([values.get(key, "") for key in RUN_HEADERS], value_input_option="USER_ENTERED")
+        """Append the terminal run row with duplicate-safe transient retry.
+
+        After a retryable append failure, verify the run-id column first. If the
+        row is already durable, return success; only retry the append when the
+        durable readback proves the run id is absent.
+        """
+
+        ws = self._worksheet("collector_runs")
+        row = [values.get(key, "") for key in RUN_HEADERS]
+        run_id = str(values.get("collector_run_id", "") or "").strip()
+        for attempt in range(len(SHEET_RETRY_DELAYS_SECONDS) + 1):
+            try:
+                ws.append_row(row, value_input_option="USER_ENTERED")
+                return
+            except Exception as exc:
+                if (
+                    not _is_retryable_sheet_error(exc)
+                    or attempt >= len(SHEET_RETRY_DELAYS_SECONDS)
+                ):
+                    raise
+                time.sleep(SHEET_RETRY_DELAYS_SECONDS[attempt])
+                if run_id:
+                    durable_ids = _retry_sheet_call(lambda: ws.col_values(1))
+                    if run_id in {str(value).strip() for value in durable_ids[1:]}:
+                        return
 
     @staticmethod
     def _metric_value(ws: gspread.Worksheet, metric: str) -> str:
-        for row in ws.get_all_values()[1:]:
+        for row in _retry_sheet_call(ws.get_all_values)[1:]:
             if row and str(row[0]).strip() == metric:
                 return str(row[1] if len(row) > 1 else "").strip()
         return ""
 
     def maybe_auto_promote(self) -> dict[str, Any]:
-        config_ws = self.book.worksheet("collector_config")
-        rows = config_ws.get_all_records()
+        config_ws = self._worksheet("collector_config")
+        rows = _retry_sheet_call(config_ws.get_all_records)
         config_rows = {
             str(row.get("config_key", "")).strip(): (idx + 2, row)
             for idx, row in enumerate(rows)
@@ -274,7 +415,7 @@ class GoogleSheetStore:
         ).strip().upper() in {"TRUE", "1", "YES", "Y"}
         mode_row = config_rows.get("mode")
         current_mode = str(mode_row[1].get("value", "")).strip() if mode_row else ""
-        health_ws = self.book.worksheet("collector_health")
+        health_ws = self._worksheet("collector_health")
         promotion_gate = self._metric_value(health_ws, "promotion_gate").upper()
         result = {
             "auto_promote_enabled": auto_enabled,
@@ -291,17 +432,35 @@ class GoogleSheetStore:
             return result
         row_no = mode_row[0]
         now = self._now().strftime("%Y-%m-%d %H:%M:%S")
-        config_ws.update(
-            range_name=f"B{row_no}:F{row_no}",
-            values=[[
-                "cache_primary",
-                mode_row[1].get("value_type", "string"),
-                mode_row[1].get("status", "active"),
-                "双健康门和影子验证通过后自动切换；默认仍应保持关闭",
-                now,
-            ]],
-            value_input_option="USER_ENTERED",
+        _retry_sheet_call(
+            lambda: config_ws.update(
+                range_name=f"B{row_no}:F{row_no}",
+                values=[[
+                    "cache_primary",
+                    mode_row[1].get("value_type", "string"),
+                    mode_row[1].get("status", "active"),
+                    "双健康门和影子验证通过后自动切换；默认仍应保持关闭",
+                    now,
+                ]],
+                value_input_option="USER_ENTERED",
+            )
         )
         result["promoted"] = True
         result["current_mode"] = "cache_primary"
         return result
+
+
+__all__ = [
+    "ARTICLE_HEADERS",
+    "EXTRACTION_HEADERS",
+    "QUERY_HEADERS",
+    "RUN_HEADERS",
+    "SCOPES",
+    "SHEET_RETRYABLE_STATUS_CODES",
+    "SHEET_RETRY_DELAYS_SECONDS",
+    "SOURCE_HEADERS",
+    "GoogleSheetStore",
+    "_is_retryable_sheet_error",
+    "_retry_sheet_call",
+    "_sheet_http_status",
+]
