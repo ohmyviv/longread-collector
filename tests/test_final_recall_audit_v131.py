@@ -219,12 +219,12 @@ def test_fixed_phase2_replay_reproduces_forensic_baseline() -> None:
     assert len(replayed) == expected["final_items"] == 58
     assert summary["strict_measurement_universe"] == expected["strict_measurement_universe"] == 36
     assert summary["strict_measurement_covered"] == expected["strict_measurement_covered"] == 15
-    assert summary["strict_measurement_coverage_rate"] == pytest.approx(15 / 36)
+    assert summary["strict_measurement_coverage_rate"] == pytest.approx(round(15 / 36, 4))
     assert summary["conditional_surface_recall_denominator"] == 15
     assert summary["conditional_surface_recall_discovered"] == 13
-    assert summary["conditional_surface_recall"] == pytest.approx(13 / 15)
+    assert summary["conditional_surface_recall"] == pytest.approx(round(13 / 15, 4))
     assert summary["conditional_surface_editable"] == 9
-    assert summary["conditional_surface_editable_recall"] == pytest.approx(9 / 15)
+    assert summary["conditional_surface_editable_recall"] == pytest.approx(round(9 / 15, 4))
     assert summary["strict_measurement_zh_covered"] == 1
     assert summary["strict_measurement_en_covered"] == 14
 
