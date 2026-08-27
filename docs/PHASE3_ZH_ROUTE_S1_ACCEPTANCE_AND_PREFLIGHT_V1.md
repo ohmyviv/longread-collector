@@ -35,19 +35,30 @@ A route may return zero useful articles and the run may still be a valid Day-0 P
 
 ## 3. Machine audit layers
 
-The deterministic read-only audit engine is:
+The deterministic low-level read-only audit engine is:
 
 `src/longread_collector/zh_route_shadow_s1_audit_v1.py`
 
-It consumes only persisted rows and performs no Discovery, HTTP request, body extraction or Sheet write.
+The canonical prospective entry point additionally applies the real experiment activation cohort boundary:
 
-### L0 — Scheduler availability
+`src/longread_collector/zh_route_shadow_s1_cohort_guard_v1.py`
+
+The Google Sheets runner uses that guarded entry point:
+
+`src/longread_collector/zh_route_shadow_s1_audit_runner.py`
+
+All of these consume only persisted rows and perform no Discovery, HTTP request, body extraction or Sheet write.
+
+### L0 — Scheduler and cohort availability
 
 - no durable Collector run → `NOT_EVALUABLE`, never S1 FAIL;
 - duplicate durable `collector_run_id` → FAIL;
-- non-Chinese group → `NOT_EVALUABLE`.
+- non-Chinese group → `NOT_EVALUABLE`;
+- any run started before **2026-08-27 16:24:01 BJT**, when PR #134 entered `main`, → `NOT_EVALUABLE` even if it is otherwise a valid historical Chinese run.
 
-This prevents GitHub scheduler delay/drop from contaminating S1 route performance.
+The activation boundary is essential: pre-#134 runs were never capable of emitting S1 route sidecars, so their absent telemetry is expected and must not be counted as Treatment failure.
+
+This prevents GitHub scheduler delay/drop and pre-experiment history from contaminating S1 route performance.
 
 ### L1 — Control validity
 
@@ -136,9 +147,10 @@ Do not say “3–5 runs and then S2.” The correct denominator is **eligible e
 
 A source receives one eligible exposure only when:
 
-1. the source was naturally selected by Control;
-2. L0–L3 are valid;
-3. all its expected active Treatment surfaces are represented in the telemetry contract.
+1. the run belongs to the prospective post-#134 cohort;
+2. the source was naturally selected by Control;
+3. L0–L3 are valid;
+4. all its expected active Treatment surfaces are represented in the telemetry contract.
 
 Suggested maturity vocabulary is descriptive rather than threshold gaming:
 
