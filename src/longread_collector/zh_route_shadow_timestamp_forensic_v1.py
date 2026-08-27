@@ -1,7 +1,7 @@
 """Read-only timestamp forensic checks for Chinese Route Shadow S1.
 
 This module never runs Discovery, fetches a URL, mutates a persisted row or
-changes Treatment/Control behavior.  It inspects already-persisted route item
+changes Treatment/Control behavior. It inspects already-persisted route item
 rows and identifies timestamp evidence that is internally inconsistent with
 first-party URL paths or article-local relative-age text.
 
@@ -20,10 +20,15 @@ from zoneinfo import ZoneInfo
 
 from dateutil import parser as date_parser
 
-S1_TIMESTAMP_FORENSIC_VERSION = "zh-route-shadow-timestamp-forensic-v1"
+S1_TIMESTAMP_FORENSIC_VERSION = "zh-route-shadow-timestamp-forensic-v1.1"
 
+# Conventional first-party date paths, e.g. /2026/08/27/ or /2026-08-27/.
 _URL_PATH_DATE_RE = re.compile(
     r"/(20\d{2})[-/](0?[1-9]|1[0-2])[-/](0?[1-9]|[12]\d|3[01])(?:/|$)"
+)
+# EEO uses a compact month/day path, e.g. /2026/0827/1013692.shtml.
+_URL_PATH_COMPACT_MD_RE = re.compile(
+    r"/(20\d{2})/(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?:/|$)"
 )
 _RELATIVE_AGE_RE = re.compile(r"(?P<n>\d{1,3})\s*(?P<unit>分钟|小时)前")
 
@@ -60,18 +65,31 @@ def _parse_datetime(value: Any, *, tz: ZoneInfo) -> datetime | None:
     return parsed.astimezone(tz)
 
 
-def url_path_date(value: Any) -> str:
-    """Return an explicit YYYY-MM-DD path component without inferring meaning."""
-
-    path = urlsplit(_text(value)).path
-    match = _URL_PATH_DATE_RE.search(path)
-    if not match:
-        return ""
+def _validated_path_date(year: str, month: str, day: str) -> str:
     try:
-        parsed = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        parsed = date(int(year), int(month), int(day))
     except ValueError:
         return ""
     return parsed.isoformat()
+
+
+def url_path_date(value: Any) -> str:
+    """Return an explicit path date without inferring publication semantics.
+
+    Supported first-party shapes are deliberately narrow:
+    - YYYY/MM/DD or YYYY-MM-DD;
+    - EEO-style YYYY/MMDD.
+    """
+
+    path = urlsplit(_text(value)).path
+    match = _URL_PATH_DATE_RE.search(path)
+    if match:
+        return _validated_path_date(match.group(1), match.group(2), match.group(3))
+
+    compact = _URL_PATH_COMPACT_MD_RE.search(path)
+    if compact:
+        return _validated_path_date(compact.group(1), compact.group(2), compact.group(3))
+    return ""
 
 
 def _relative_age_evidence(title: str, observed_at: datetime) -> tuple[str, datetime | None]:
@@ -142,8 +160,8 @@ def audit_item_timestamp(row: dict[str, Any]) -> list[TimestampForensicFinding]:
                 )
             else:
                 # Relative-age labels are rounded UI evidence, so tolerate up to
-                # two hours.  The guard is intended to catch cross-card/day-scale
-                # binding, not to assert an exact publication timestamp.
+                # two hours. The guard catches cross-card/day-scale binding, not
+                # an exact publication timestamp.
                 if abs((published - expected).total_seconds()) > 2 * 3600:
                     findings.append(
                         TimestampForensicFinding(
