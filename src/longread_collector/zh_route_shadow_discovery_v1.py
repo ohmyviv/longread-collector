@@ -1,13 +1,9 @@
 """Paired natural Chinese route Shadow discovery (S1).
 
-Control native discovery remains authoritative.  When a naturally selected
-Chinese source has a Treatment portfolio, this module performs first-party
-metadata-only requests immediately after Control native discovery and returns
-the Control batch unchanged.
-
-Treatment never calls Jina, Firecrawl, candidate selection or body extraction.
-Unknown publication time is observable evidence, but it is *not* counted as
-proven-recent coverage.  Any Treatment failure is fail-open to Control.
+Control native discovery is authoritative. Treatment performs only first-party
+metadata requests immediately after Control native discovery, never enters
+selection/extraction, and fails open. Unknown dates remain observable but do not
+count as proven-recent coverage.
 """
 from __future__ import annotations
 
@@ -40,6 +36,7 @@ from .zh_route_shadow_contracts_v1 import (
 )
 
 ROUTE_SHADOW_DISCOVERY_VERSION = "zh-route-shadow-discovery-v1"
+DIAGNOSTIC_RSS_HORIZON_DAYS = 36500
 _FIRST_PARTY_SUFFIX = {
     "yicai": "yicai.com",
     "eeo": "eeo.com.cn",
@@ -189,8 +186,6 @@ def end_zh_route_shadow(token: Token) -> None:
 
 
 class _EventParser(HTMLParser):
-    """Preserve document order for article anchors and nearby visible text."""
-
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.events: list[tuple[str, str, str]] = []
@@ -202,7 +197,7 @@ class _EventParser(HTMLParser):
     ) -> None:
         if tag.lower() != "a" or self._href is not None:
             return
-        values = {str(key).lower(): str(value or "") for key, value in attrs}
+        values = {str(k).lower(): str(v or "") for k, v in attrs}
         self._href = values.get("href", "")
         self._anchor_text = []
 
@@ -218,8 +213,9 @@ class _EventParser(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         if tag.lower() != "a" or self._href is None:
             return
-        title = " ".join(" ".join(self._anchor_text).split())
-        self.events.append(("anchor", self._href, title))
+        self.events.append(
+            ("anchor", self._href, " ".join(" ".join(self._anchor_text).split()))
+        )
         self._href = None
         self._anchor_text = []
 
@@ -235,9 +231,8 @@ def _articleish(surface: RouteSurface, url: str) -> bool:
     if (
         parts.scheme not in {"http", "https"}
         or not _host_is_first_party(surface.source_id, parts.netloc)
+        or canonicalize_url(url) == canonicalize_url(surface.url)
     ):
-        return False
-    if canonicalize_url(url) == canonicalize_url(surface.url):
         return False
     path = parts.path or "/"
     if _LISTING_PATH_RE.search(path):
@@ -257,47 +252,45 @@ def _articleish(surface: RouteSurface, url: str) -> bool:
 def _parse_context_time(
     text: str, observed_at: datetime
 ) -> tuple[str, str, str]:
-    relative = _RELATIVE_CLOCK_RE.search(text)
-    if relative:
+    match = _RELATIVE_CLOCK_RE.search(text)
+    if match:
         day = observed_at.date() - (
-            timedelta(days=1) if relative.group("day") == "昨天" else timedelta()
+            timedelta(days=1) if match.group("day") == "昨天" else timedelta()
         )
         value = datetime(
             day.year,
             day.month,
             day.day,
-            int(relative.group("h")),
-            int(relative.group("m")),
+            int(match.group("h")),
+            int(match.group("m")),
             tzinfo=observed_at.tzinfo,
         )
         if value <= observed_at:
             return value.isoformat(), "listing_relative_clock", "high"
 
-    ymd = _YMD_CLOCK_RE.search(text)
-    if ymd:
-        hour = int(ymd.group("h") or 0)
-        minute = int(ymd.group("m") or 0)
+    match = _YMD_CLOCK_RE.search(text)
+    if match:
         value = datetime(
-            int(ymd.group("y")),
-            int(ymd.group("mo")),
-            int(ymd.group("d")),
-            hour,
-            minute,
+            int(match.group("y")),
+            int(match.group("mo")),
+            int(match.group("d")),
+            int(match.group("h") or 0),
+            int(match.group("m") or 0),
             tzinfo=observed_at.tzinfo,
         )
         if value <= observed_at + timedelta(minutes=5):
-            if ymd.group("h"):
+            if match.group("h"):
                 return value.isoformat(), "listing_absolute_clock", "high"
             return value.date().isoformat(), "listing_absolute_date", "date_only"
 
-    month_day = _MD_CLOCK_RE.search(text)
-    if month_day:
+    match = _MD_CLOCK_RE.search(text)
+    if match:
         value = datetime(
             observed_at.year,
-            int(month_day.group("mo")),
-            int(month_day.group("d")),
-            int(month_day.group("h")),
-            int(month_day.group("m")),
+            int(match.group("mo")),
+            int(match.group("d")),
+            int(match.group("h")),
+            int(match.group("m")),
             tzinfo=observed_at.tzinfo,
         )
         if value > observed_at + timedelta(days=1):
@@ -310,7 +303,6 @@ def _parse_context_time(
 def _freshness_state(
     published_at: str, *, started: datetime, freshness_days: int
 ) -> bool:
-    """Return True only when publication evidence *proves* the horizon."""
     text = str(published_at or "").strip()
     if not text:
         return False
@@ -330,15 +322,7 @@ def _freshness_state(
 
 
 def _noise_reason(surface: RouteSurface, title: str) -> str:
-    if (
-        surface.source_id == "yicai"
-        and surface.surface_id == "yicai_commercial_control"
-    ):
-        return "commercial_surface"
-    if (
-        surface.source_id == "caixin"
-        and surface.surface_id == "caixin_promotion_control"
-    ):
+    if surface.surface_id in {"yicai_commercial_control", "caixin_promotion_control"}:
         return "commercial_surface"
     return tier1_micro_market_reason(title)
 
@@ -381,7 +365,7 @@ def parse_shadow_section_html(
     result: list[ShadowRouteItem] = []
     for rank, (url, title) in enumerate(admitted, start=1):
         canonical = canonicalize_url(url)
-        published_at, pub_source, confidence = _parse_context_time(
+        published, source_name, confidence = _parse_context_time(
             " ".join(contexts.get(canonical, ())), observed_at
         )
         result.append(
@@ -395,12 +379,12 @@ def parse_shadow_section_html(
                 url=url,
                 url_canonical=canonical,
                 title=title,
-                published_at=published_at,
-                publication_time_source=pub_source,
+                published_at=published,
+                publication_time_source=source_name,
                 publication_time_confidence=confidence,
                 rank=rank,
                 within_freshness=_freshness_state(
-                    published_at,
+                    published,
                     started=observed_at,
                     freshness_days=freshness_days,
                 ),
@@ -420,15 +404,15 @@ def parse_shadow_feed(
 ) -> list[ShadowRouteItem]:
     feed_source = dict(source)
     feed_source["source_id"] = surface.source_id
-    # Long parser horizon is intentional: an HTTP-200 but stale official feed
-    # must be reported as stale rather than looking like an empty healthy route.
+    # Parse far beyond the operational window so old-but-reachable feeds are
+    # explicitly classified stale rather than collapsing into an empty route.
     parsed = parse_feed(
         body,
         source=feed_source,
         endpoint=surface.url,
         limit=surface.max_items,
         started=observed_at,
-        freshness_days=3650,
+        freshness_days=DIAGNOSTIC_RSS_HORIZON_DAYS,
     )
     result: list[ShadowRouteItem] = []
     for rank, item in enumerate(parsed, start=1):
@@ -475,20 +459,20 @@ def _surface_status(
 
 
 def _published_bounds(items: list[ShadowRouteItem]) -> tuple[str, str]:
-    values: list[datetime] = []
+    parsed_values: list[datetime] = []
     for item in items:
         if not item.published_at:
             continue
         try:
-            parsed = date_parser.parse(item.published_at)
+            value = date_parser.parse(item.published_at)
         except (TypeError, ValueError, OverflowError):
             continue
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
-        values.append(parsed)
-    if not values:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+        parsed_values.append(value)
+    if not parsed_values:
         return "", ""
-    return min(values).isoformat(), max(values).isoformat()
+    return min(parsed_values).isoformat(), max(parsed_values).isoformat()
 
 
 async def _observe_surface(
@@ -500,7 +484,7 @@ async def _observe_surface(
     freshness_days: int,
     control_urls: set[str],
 ) -> tuple[ShadowSurfaceObservation, list[ShadowRouteItem]]:
-    request_started = time.perf_counter()
+    started_clock = time.perf_counter()
     http_status: int | str = ""
     request_success = False
     parse_success = False
@@ -512,22 +496,14 @@ async def _observe_surface(
         http_status = response.status_code
         response.raise_for_status()
         request_success = True
-        if surface.transport == "rss":
-            items = parse_shadow_feed(
-                response.text,
-                source=source,
-                surface=surface,
-                observed_at=observed_at,
-                freshness_days=freshness_days,
-            )
-        else:
-            items = parse_shadow_section_html(
-                response.text,
-                source=source,
-                surface=surface,
-                observed_at=observed_at,
-                freshness_days=freshness_days,
-            )
+        parser = parse_shadow_feed if surface.transport == "rss" else parse_shadow_section_html
+        items = parser(
+            response.text,
+            source=source,
+            surface=surface,
+            observed_at=observed_at,
+            freshness_days=freshness_days,
+        )
         parse_success = True
     except Exception as exc:
         error_type = type(exc).__name__
@@ -540,36 +516,38 @@ async def _observe_surface(
     items = list(unique.values())
     oldest, newest = _published_bounds(items)
     noise_counts = Counter(item.noise_reason for item in items if item.noise_reason)
-    observation = ShadowSurfaceObservation(
-        source_id=surface.source_id,
-        surface_id=surface.surface_id,
-        surface_role=surface.role.value,
-        publication_surface_id=surface.publication_surface_id,
-        endpoint=surface.url,
-        transport=surface.transport,
-        observed_at_bj=observed_at.strftime("%Y-%m-%d %H:%M:%S"),
-        request_success=request_success,
-        http_status=http_status,
-        parse_success=parse_success,
-        surface_status=_surface_status(items, request_success=request_success),
-        raw_item_count=len(items),
-        unique_item_count=len(items),
-        recent_item_count=sum(item.within_freshness for item in items),
-        dated_item_count=sum(bool(item.published_at) for item in items),
-        exact_timestamp_count=sum(
-            item.publication_time_confidence == "high" for item in items
+    return (
+        ShadowSurfaceObservation(
+            source_id=surface.source_id,
+            surface_id=surface.surface_id,
+            surface_role=surface.role.value,
+            publication_surface_id=surface.publication_surface_id,
+            endpoint=surface.url,
+            transport=surface.transport,
+            observed_at_bj=observed_at.strftime("%Y-%m-%d %H:%M:%S"),
+            request_success=request_success,
+            http_status=http_status,
+            parse_success=parse_success,
+            surface_status=_surface_status(items, request_success=request_success),
+            raw_item_count=len(items),
+            unique_item_count=len(items),
+            recent_item_count=sum(item.within_freshness for item in items),
+            dated_item_count=sum(bool(item.published_at) for item in items),
+            exact_timestamp_count=sum(
+                item.publication_time_confidence == "high" for item in items
+            ),
+            oldest_published_at=oldest,
+            newest_published_at=newest,
+            control_overlap_count=sum(item.control_overlap for item in items),
+            treatment_unique_count=sum(not item.control_overlap for item in items),
+            noise_item_count=sum(bool(item.noise_reason) for item in items),
+            noise_reason_counts=dict(noise_counts),
+            request_latency_ms=int((time.perf_counter() - started_clock) * 1000),
+            error_type=error_type,
+            error_message=error_message,
         ),
-        oldest_published_at=oldest,
-        newest_published_at=newest,
-        control_overlap_count=sum(item.control_overlap for item in items),
-        treatment_unique_count=sum(not item.control_overlap for item in items),
-        noise_item_count=sum(bool(item.noise_reason) for item in items),
-        noise_reason_counts=dict(noise_counts),
-        request_latency_ms=int((time.perf_counter() - request_started) * 1000),
-        error_type=error_type,
-        error_message=error_message,
+        items,
     )
-    return observation, items
 
 
 async def discover_treatment_metadata(
@@ -624,7 +602,6 @@ async def discover_treatment_metadata(
         limits=limits,
         timeout=float(timeout),
     ) as client:
-
         async def one(source: dict[str, Any], surface: RouteSurface):
             async with semaphore:
                 return await _observe_surface(
@@ -642,8 +619,6 @@ async def discover_treatment_metadata(
 
     observations = [observation for observation, _ in results]
     items = [item for _, group in results for item in group]
-    # S1 incremental-recall counters are promotion-safe lower bounds: an item
-    # with unknown date is retained in telemetry but does not count as recent.
     proven_recent_urls = {
         item.url_canonical for item in items if item.within_freshness
     }
@@ -693,11 +668,7 @@ class PairedZhRouteShadowDiscovery(EffectiveRouteDiscovery):
             freshness_days=freshness_days,
         )
         state = current_zh_route_shadow_state()
-        if (
-            state is None
-            or not state.enabled
-            or not state.group_id.startswith("zh_")
-        ):
+        if state is None or not state.enabled or not state.group_id.startswith("zh_"):
             return control
         try:
             state.report = await discover_treatment_metadata(
@@ -709,21 +680,20 @@ class PairedZhRouteShadowDiscovery(EffectiveRouteDiscovery):
                 timeout=self.timeout,
                 concurrency=self.concurrency,
             )
-        except Exception as exc:  # fail-open by contract
+        except Exception as exc:
             state.error = f"{type(exc).__name__}: {exc}"[:1000]
         return control
 
 
 def install_paired_zh_route_shadow_discovery() -> None:
-    """Install only the metadata sidecar used by the v0.6 Shadow runtime."""
     from . import pipeline_v05 as _pipeline_v05
 
-    if _pipeline_v05.NativeSourceDiscovery is PairedZhRouteShadowDiscovery:
-        return
-    _pipeline_v05.NativeSourceDiscovery = PairedZhRouteShadowDiscovery
+    if _pipeline_v05.NativeSourceDiscovery is not PairedZhRouteShadowDiscovery:
+        _pipeline_v05.NativeSourceDiscovery = PairedZhRouteShadowDiscovery
 
 
 __all__ = [
+    "DIAGNOSTIC_RSS_HORIZON_DAYS",
     "ROUTE_SHADOW_DISCOVERY_VERSION",
     "PairedZhRouteShadowDiscovery",
     "ShadowRouteItem",
