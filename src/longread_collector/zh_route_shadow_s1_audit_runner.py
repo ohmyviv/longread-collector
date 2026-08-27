@@ -2,7 +2,9 @@
 
 The runner never creates a worksheet and never writes cells. Missing S1 sidecar
 sheets are represented as empty evidence so the audit can distinguish
-NOT_EVALUABLE/FAIL instead of manufacturing state.
+NOT_EVALUABLE/FAIL instead of manufacturing state. The canonical entry point
+also applies the real PR #134 activation boundary so pre-S1 historical runs are
+never mislabeled as Treatment failures.
 """
 from __future__ import annotations
 
@@ -21,7 +23,7 @@ from .v06.shadow.run_summary_persistence import (
     SHADOW_RUN_SUMMARY_HEADERS,
     SHADOW_RUN_SUMMARY_SHEET,
 )
-from .zh_route_shadow_s1_audit_v1 import audit_s1_run
+from .zh_route_shadow_s1_cohort_guard_v1 import audit_prospective_s1_run
 from .zh_route_shadow_telemetry_v1 import (
     ROUTE_ITEM_HEADERS,
     ROUTE_ITEM_SHEET,
@@ -93,7 +95,7 @@ def run_read_only_s1_audit(
         if str(row.get("collector_run_id", "")).strip() == collector_run_id
     ]
 
-    return audit_s1_run(
+    return audit_prospective_s1_run(
         collector_run_id=collector_run_id,
         run_rows=run_rows,
         coverage_rows=coverage_rows,
