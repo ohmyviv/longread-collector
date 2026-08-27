@@ -51,18 +51,51 @@ class FakeArticleWorksheet:
         self.batch_payload = batch
 
 
+class FakeRunWorksheet:
+    def __init__(self, *, durable_after_first_failure: bool) -> None:
+        self.durable_after_first_failure = durable_after_first_failure
+        self.append_calls = 0
+        self.ids = ["collector_run_id"]
+
+    def append_row(self, row, **kwargs):
+        self.append_calls += 1
+        run_id = str(row[0])
+        if self.append_calls == 1:
+            if self.durable_after_first_failure:
+                self.ids.append(run_id)
+            raise FakeSheetError(503)
+        self.ids.append(run_id)
+
+    def col_values(self, column: int):
+        assert column == 1
+        return list(self.ids)
+
+
 class FakeBook:
-    def __init__(self, article_ws: FakeArticleWorksheet) -> None:
+    def __init__(
+        self,
+        article_ws: FakeArticleWorksheet | None = None,
+        run_ws: FakeRunWorksheet | None = None,
+    ) -> None:
         self.article_ws = article_ws
+        self.run_ws = run_ws
 
     def worksheet(self, title: str):
-        assert title == "article_cache"
-        return self.article_ws
+        if title == "article_cache":
+            assert self.article_ws is not None
+            return self.article_ws
+        if title == "collector_runs":
+            assert self.run_ws is not None
+            return self.run_ws
+        raise AssertionError(title)
 
 
-def _store(article_ws: FakeArticleWorksheet) -> GoogleSheetStore:
+def _store(
+    article_ws: FakeArticleWorksheet | None = None,
+    run_ws: FakeRunWorksheet | None = None,
+) -> GoogleSheetStore:
     store = object.__new__(GoogleSheetStore)
-    store.book = FakeBook(article_ws)
+    store.book = FakeBook(article_ws=article_ws, run_ws=run_ws)
     store.settings = SimpleNamespace(cache_hours=168)
     store.tz = ZoneInfo("Asia/Shanghai")
     return store
@@ -136,7 +169,7 @@ def test_upsert_existing_articles_uses_one_cache_read_and_one_batch_update() -> 
     ws = FakeArticleWorksheet(
         [ARTICLE_HEADERS, _existing_row("a1"), _existing_row("a2")]
     )
-    store = _store(ws)
+    store = _store(article_ws=ws)
     pairs = [
         (
             DiscoveredURL(url="https://example.com/a1", rank=1),
@@ -156,7 +189,6 @@ def test_upsert_existing_articles_uses_one_cache_read_and_one_batch_update() -> 
     assert len(ws.batch_payload) == 2
     assert [item["range"] for item in ws.batch_payload] == ["A2:AV2", "A3:AV3"]
 
-    # Historical fields that the old row_values path preserved remain intact.
     first_update = ws.batch_payload[0]["values"][0]
     assert first_update[27] == "2026-08-20 09:00:00"
     assert first_update[30] == "old-selected-run"
@@ -166,7 +198,7 @@ def test_upsert_existing_articles_uses_one_cache_read_and_one_batch_update() -> 
 
 def test_upsert_mixed_new_and_existing_keeps_single_cache_read() -> None:
     ws = FakeArticleWorksheet([ARTICLE_HEADERS, _existing_row("a1")])
-    store = _store(ws)
+    store = _store(article_ws=ws)
     pairs = [
         (
             DiscoveredURL(url="https://example.com/a1", rank=1),
@@ -183,3 +215,29 @@ def test_upsert_mixed_new_and_existing_keeps_single_cache_read() -> None:
     assert ws.row_values_calls == 0
     assert ws.append_rows_calls == 1
     assert ws.batch_update_calls == 1
+
+
+def test_terminal_run_append_does_not_duplicate_if_first_503_was_already_durable(monkeypatch) -> None:
+    ws = FakeRunWorksheet(durable_after_first_failure=True)
+    store = _store(run_ws=ws)
+    monkeypatch.setattr("longread_collector.sheets.time.sleep", lambda _: None)
+
+    store.append_collector_run(
+        {"collector_run_id": "RUN-DURABLE", "final_status": "failed"}
+    )
+
+    assert ws.append_calls == 1
+    assert ws.ids.count("RUN-DURABLE") == 1
+
+
+def test_terminal_run_append_retries_when_readback_proves_absent(monkeypatch) -> None:
+    ws = FakeRunWorksheet(durable_after_first_failure=False)
+    store = _store(run_ws=ws)
+    monkeypatch.setattr("longread_collector.sheets.time.sleep", lambda _: None)
+
+    store.append_collector_run(
+        {"collector_run_id": "RUN-RETRY", "final_status": "failed"}
+    )
+
+    assert ws.append_calls == 2
+    assert ws.ids.count("RUN-RETRY") == 1
