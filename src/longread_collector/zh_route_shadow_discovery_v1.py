@@ -2,11 +2,12 @@
 
 Control native discovery remains authoritative.  When a naturally selected
 Chinese source has a Treatment portfolio, this module performs first-party
-metadata-only requests immediately after Control native discovery, records the
-observations in a ContextVar, and returns the Control batch unchanged.
+metadata-only requests immediately after Control native discovery and returns
+the Control batch unchanged.
 
 Treatment never calls Jina, Firecrawl, candidate selection or body extraction.
-Any Treatment exception is fail-open and cannot fail the Control run.
+Unknown publication time is observable evidence, but it is *not* counted as
+proven-recent coverage.  Any Treatment failure is fail-open to Control.
 """
 from __future__ import annotations
 
@@ -59,12 +60,13 @@ _RELATIVE_CLOCK_RE = re.compile(
     r"(?P<day>今天|昨天)\s*(?P<h>[01]?\d|2[0-3]):(?P<m>[0-5]\d)"
 )
 _YMD_CLOCK_RE = re.compile(
-    r"(?P<y>20\d{2})[年\-/](?P<mo>0?[1-9]|1[0-2])[月\-/](?P<d>0?[1-9]|[12]\d|3[01])日?"
+    r"(?P<y>20\d{2})[年\-/](?P<mo>0?[1-9]|1[0-2])[月\-/]"
+    r"(?P<d>0?[1-9]|[12]\d|3[01])日?"
     r"(?:\s+(?P<h>[01]?\d|2[0-3]):(?P<m>[0-5]\d))?"
 )
 _MD_CLOCK_RE = re.compile(
     r"(?<!\d)(?P<mo>0?[1-9]|1[0-2])[/\-](?P<d>0?[1-9]|[12]\d|3[01])"
-    r"(?:\s+(?P<h>[01]?\d|2[0-3]):(?P<m>[0-5]\d))"
+    r"\s+(?P<h>[01]?\d|2[0-3]):(?P<m>[0-5]\d)"
 )
 
 
@@ -167,11 +169,15 @@ class _ShadowState:
     error: str = ""
 
 
-_STATE: ContextVar[_ShadowState | None] = ContextVar("zh_route_shadow_state", default=None)
+_STATE: ContextVar[_ShadowState | None] = ContextVar(
+    "zh_route_shadow_state", default=None
+)
 
 
 def begin_zh_route_shadow(*, enabled: bool, group_id: str) -> Token:
-    return _STATE.set(_ShadowState(enabled=bool(enabled), group_id=str(group_id or "all")))
+    return _STATE.set(
+        _ShadowState(enabled=bool(enabled), group_id=str(group_id or "all"))
+    )
 
 
 def current_zh_route_shadow_state() -> _ShadowState | None:
@@ -183,16 +189,20 @@ def end_zh_route_shadow(token: Token) -> None:
 
 
 class _EventParser(HTMLParser):
+    """Preserve document order for article anchors and nearby visible text."""
+
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.events: list[tuple[str, str, str]] = []
         self._href: str | None = None
         self._anchor_text: list[str] = []
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+    def handle_starttag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
         if tag.lower() != "a" or self._href is not None:
             return
-        values = {str(k).lower(): str(v or "") for k, v in attrs}
+        values = {str(key).lower(): str(value or "") for key, value in attrs}
         self._href = values.get("href", "")
         self._anchor_text = []
 
@@ -222,27 +232,36 @@ def _host_is_first_party(source_id: str, host: str) -> bool:
 
 def _articleish(surface: RouteSurface, url: str) -> bool:
     parts = urlsplit(url)
-    if parts.scheme not in {"http", "https"} or not _host_is_first_party(surface.source_id, parts.netloc):
+    if (
+        parts.scheme not in {"http", "https"}
+        or not _host_is_first_party(surface.source_id, parts.netloc)
+    ):
         return False
     if canonicalize_url(url) == canonicalize_url(surface.url):
         return False
     path = parts.path or "/"
     if _LISTING_PATH_RE.search(path):
         return False
-    # Core/breadth routes must not silently absorb known non-editorial Caixin
-    # products merely because they share the registrable domain.
     if surface.source_id == "caixin" and surface.role is not SurfaceRole.NOISE_CONTROL:
-        if parts.netloc.lower().startswith(("promote.", "video.", "photos.", "conferences.")):
+        if parts.netloc.lower().startswith(
+            ("promote.", "video.", "photos.", "conferences.")
+        ):
             return False
-    if surface.source_id == "jiemian-depth" and re.search(r"/(?:jmedia|account|author)/", path, re.I):
+    if surface.source_id == "jiemian-depth" and re.search(
+        r"/(?:jmedia|account|author)/", path, re.I
+    ):
         return False
     return bool(_ARTICLE_PATH_RE.search(path))
 
 
-def _parse_context_time(text: str, observed_at: datetime) -> tuple[str, str, str]:
+def _parse_context_time(
+    text: str, observed_at: datetime
+) -> tuple[str, str, str]:
     relative = _RELATIVE_CLOCK_RE.search(text)
     if relative:
-        day = observed_at.date() - (timedelta(days=1) if relative.group("day") == "昨天" else timedelta())
+        day = observed_at.date() - (
+            timedelta(days=1) if relative.group("day") == "昨天" else timedelta()
+        )
         value = datetime(
             day.year,
             day.month,
@@ -259,52 +278,69 @@ def _parse_context_time(text: str, observed_at: datetime) -> tuple[str, str, str
         hour = int(ymd.group("h") or 0)
         minute = int(ymd.group("m") or 0)
         value = datetime(
-            int(ymd.group("y")), int(ymd.group("mo")), int(ymd.group("d")),
-            hour, minute, tzinfo=observed_at.tzinfo,
+            int(ymd.group("y")),
+            int(ymd.group("mo")),
+            int(ymd.group("d")),
+            hour,
+            minute,
+            tzinfo=observed_at.tzinfo,
         )
         if value <= observed_at + timedelta(minutes=5):
-            confidence = "high" if ymd.group("h") else "date_only"
-            source = "listing_absolute_clock" if ymd.group("h") else "listing_absolute_date"
-            return value.isoformat() if ymd.group("h") else value.date().isoformat(), source, confidence
+            if ymd.group("h"):
+                return value.isoformat(), "listing_absolute_clock", "high"
+            return value.date().isoformat(), "listing_absolute_date", "date_only"
 
-    md = _MD_CLOCK_RE.search(text)
-    if md:
-        year = observed_at.year
+    month_day = _MD_CLOCK_RE.search(text)
+    if month_day:
         value = datetime(
-            year, int(md.group("mo")), int(md.group("d")), int(md.group("h")), int(md.group("m")),
+            observed_at.year,
+            int(month_day.group("mo")),
+            int(month_day.group("d")),
+            int(month_day.group("h")),
+            int(month_day.group("m")),
             tzinfo=observed_at.tzinfo,
         )
         if value > observed_at + timedelta(days=1):
-            value = value.replace(year=year - 1)
+            value = value.replace(year=observed_at.year - 1)
         if value <= observed_at + timedelta(minutes=5):
             return value.isoformat(), "listing_month_day_clock", "high"
     return "", "", ""
 
 
-def _freshness_state(published_at: str, *, started: datetime, freshness_days: int) -> bool:
+def _freshness_state(
+    published_at: str, *, started: datetime, freshness_days: int
+) -> bool:
+    """Return True only when publication evidence *proves* the horizon."""
     text = str(published_at or "").strip()
     if not text:
-        return True  # unknown date remains observable in S1; it is not promoted.
+        return False
     try:
         parsed = date_parser.parse(text)
     except (TypeError, ValueError, OverflowError):
-        return True
+        return False
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=started.tzinfo)
     else:
         parsed = parsed.astimezone(started.tzinfo)
-    return parsed >= started - timedelta(days=max(1, int(freshness_days)))
+    return (
+        started - timedelta(days=max(1, int(freshness_days)))
+        <= parsed
+        <= started + timedelta(minutes=5)
+    )
 
 
 def _noise_reason(surface: RouteSurface, title: str) -> str:
-    if surface.source_id == "yicai" and surface.surface_id == "yicai_commercial_control":
+    if (
+        surface.source_id == "yicai"
+        and surface.surface_id == "yicai_commercial_control"
+    ):
         return "commercial_surface"
-    if surface.source_id == "caixin" and surface.surface_id == "caixin_promotion_control":
+    if (
+        surface.source_id == "caixin"
+        and surface.surface_id == "caixin_promotion_control"
+    ):
         return "commercial_surface"
-    reason = tier1_micro_market_reason(title)
-    if reason:
-        return reason
-    return ""
+    return tier1_micro_market_reason(title)
 
 
 def parse_shadow_section_html(
@@ -317,7 +353,7 @@ def parse_shadow_section_html(
 ) -> list[ShadowRouteItem]:
     parser = _EventParser()
     parser.feed(body)
-    raw: list[tuple[str, str]] = []
+    admitted: list[tuple[str, str]] = []
     contexts: dict[str, list[str]] = defaultdict(list)
     current: str | None = None
     seen: set[str] = set()
@@ -327,27 +363,28 @@ def parse_shadow_section_html(
             url = urljoin(surface.url, href)
             if _articleish(surface, url) and len(text) >= 6:
                 canonical = canonicalize_url(url)
-                current = canonical
-                if canonical not in seen:
+                if canonical not in seen and len(admitted) < surface.max_items:
                     seen.add(canonical)
-                    raw.append((url, text))
-                if len(raw) >= surface.max_items:
-                    # Continue collecting nearby context for the final item but
-                    # do not admit new article anchors beyond the surface quota.
-                    continue
-            elif current and text:
+                    admitted.append((url, text))
+                    current = canonical
+                elif canonical in seen:
+                    current = canonical
+                else:
+                    current = None
+                continue
+            if current and text:
                 contexts[current].append(text)
             continue
         if current and text:
             contexts[current].append(text)
 
-    items: list[ShadowRouteItem] = []
-    for rank, (url, title) in enumerate(raw[: surface.max_items], start=1):
+    result: list[ShadowRouteItem] = []
+    for rank, (url, title) in enumerate(admitted, start=1):
         canonical = canonicalize_url(url)
         published_at, pub_source, confidence = _parse_context_time(
             " ".join(contexts.get(canonical, ())), observed_at
         )
-        items.append(
+        result.append(
             ShadowRouteItem(
                 source_id=surface.source_id,
                 surface_id=surface.surface_id,
@@ -363,12 +400,14 @@ def parse_shadow_section_html(
                 publication_time_confidence=confidence,
                 rank=rank,
                 within_freshness=_freshness_state(
-                    published_at, started=observed_at, freshness_days=freshness_days
+                    published_at,
+                    started=observed_at,
+                    freshness_days=freshness_days,
                 ),
                 noise_reason=_noise_reason(surface, title),
             )
         )
-    return items
+    return result
 
 
 def parse_shadow_feed(
@@ -381,8 +420,8 @@ def parse_shadow_feed(
 ) -> list[ShadowRouteItem]:
     feed_source = dict(source)
     feed_source["source_id"] = surface.source_id
-    # Parse a long horizon on purpose so a HTTP-200 but stale official feed can
-    # be diagnosed as stale instead of looking like an empty healthy route.
+    # Long parser horizon is intentional: an HTTP-200 but stale official feed
+    # must be reported as stale rather than looking like an empty healthy route.
     parsed = parse_feed(
         body,
         source=feed_source,
@@ -391,10 +430,10 @@ def parse_shadow_feed(
         started=observed_at,
         freshness_days=3650,
     )
-    items: list[ShadowRouteItem] = []
+    result: list[ShadowRouteItem] = []
     for rank, item in enumerate(parsed, start=1):
         published = str(item.published_at or "").strip()
-        items.append(
+        result.append(
             ShadowRouteItem(
                 source_id=surface.source_id,
                 surface_id=surface.surface_id,
@@ -410,24 +449,28 @@ def parse_shadow_feed(
                 publication_time_confidence="high" if published else "",
                 rank=rank,
                 within_freshness=_freshness_state(
-                    published, started=observed_at, freshness_days=freshness_days
+                    published,
+                    started=observed_at,
+                    freshness_days=freshness_days,
                 ),
                 noise_reason=_noise_reason(surface, item.title),
             )
         )
-    return items
+    return result
 
 
-def _surface_status(items: list[ShadowRouteItem], *, request_success: bool) -> str:
+def _surface_status(
+    items: list[ShadowRouteItem], *, request_success: bool
+) -> str:
     if not request_success:
         return "request_failed"
     if not items:
         return "empty"
     dated = [item for item in items if item.published_at]
-    if dated and not any(item.within_freshness for item in dated):
-        return "stale_surface"
     if not dated:
         return "date_unknown"
+    if not any(item.within_freshness for item in dated):
+        return "stale_surface"
     return "observed"
 
 
@@ -457,16 +500,16 @@ async def _observe_surface(
     freshness_days: int,
     control_urls: set[str],
 ) -> tuple[ShadowSurfaceObservation, list[ShadowRouteItem]]:
-    started_clock = time.perf_counter()
-    status: int | str = ""
-    error_type = ""
-    error_message = ""
+    request_started = time.perf_counter()
+    http_status: int | str = ""
     request_success = False
     parse_success = False
+    error_type = ""
+    error_message = ""
     items: list[ShadowRouteItem] = []
     try:
         response = await client.get(surface.url, follow_redirects=True)
-        status = response.status_code
+        http_status = response.status_code
         response.raise_for_status()
         request_success = True
         if surface.transport == "rss":
@@ -506,7 +549,7 @@ async def _observe_surface(
         transport=surface.transport,
         observed_at_bj=observed_at.strftime("%Y-%m-%d %H:%M:%S"),
         request_success=request_success,
-        http_status=status,
+        http_status=http_status,
         parse_success=parse_success,
         surface_status=_surface_status(items, request_success=request_success),
         raw_item_count=len(items),
@@ -522,7 +565,7 @@ async def _observe_surface(
         treatment_unique_count=sum(not item.control_overlap for item in items),
         noise_item_count=sum(bool(item.noise_reason) for item in items),
         noise_reason_counts=dict(noise_counts),
-        request_latency_ms=int((time.perf_counter() - started_clock) * 1000),
+        request_latency_ms=int((time.perf_counter() - request_started) * 1000),
         error_type=error_type,
         error_message=error_message,
     )
@@ -540,7 +583,11 @@ async def discover_treatment_metadata(
     concurrency: int,
 ) -> ZhRouteShadowReport:
     selected_ids = [str(source.get("source_id", "") or "") for source in sources]
-    treatment_sources = [source for source in sources if active_s1_surfaces(str(source.get("source_id", "")))]
+    treatment_sources = [
+        source
+        for source in sources
+        if active_s1_surfaces(str(source.get("source_id", "")))
+    ]
     surfaces = [
         (source, surface)
         for source in treatment_sources
@@ -572,7 +619,12 @@ async def discover_treatment_metadata(
         max_keepalive_connections=max(1, min(int(concurrency), 6)),
     )
     semaphore = asyncio.Semaphore(max(1, min(int(concurrency), 8)))
-    async with httpx.AsyncClient(headers=headers, limits=limits, timeout=float(timeout)) as client:
+    async with httpx.AsyncClient(
+        headers=headers,
+        limits=limits,
+        timeout=float(timeout),
+    ) as client:
+
         async def one(source: dict[str, Any], surface: RouteSurface):
             async with semaphore:
                 return await _observe_surface(
@@ -584,11 +636,22 @@ async def discover_treatment_metadata(
                     control_urls=control_urls,
                 )
 
-        results = await asyncio.gather(*(one(source, surface) for source, surface in surfaces))
+        results = await asyncio.gather(
+            *(one(source, surface) for source, surface in surfaces)
+        )
 
-    observations = [result[0] for result in results]
+    observations = [observation for observation, _ in results]
     items = [item for _, group in results for item in group]
-    treatment_urls = {item.url_canonical for item in items if item.within_freshness}
+    # S1 incremental-recall counters are promotion-safe lower bounds: an item
+    # with unknown date is retained in telemetry but does not count as recent.
+    proven_recent_urls = {
+        item.url_canonical for item in items if item.within_freshness
+    }
+    proven_incremental_urls = {
+        item.url_canonical
+        for item in items
+        if item.within_freshness and not item.control_overlap
+    }
     return ZhRouteShadowReport(
         version=ROUTE_SHADOW_DISCOVERY_VERSION,
         contract_version=ROUTE_SHADOW_CONTRACT_VERSION,
@@ -597,15 +660,17 @@ async def discover_treatment_metadata(
         started_at_bj=started.strftime("%Y-%m-%d %H:%M:%S"),
         observed_at_bj=observed_at.strftime("%Y-%m-%d %H:%M:%S"),
         selected_source_ids=selected_ids,
-        treatment_source_ids=[str(source.get("source_id", "")) for source in treatment_sources],
+        treatment_source_ids=[
+            str(source.get("source_id", "")) for source in treatment_sources
+        ],
         surfaces_attempted=len(surfaces),
         metadata_requests=len(surfaces),
         body_requests=0,
         observations=observations,
         items=items,
         control_native_unique_count=len(control_urls),
-        treatment_unique_count=len(treatment_urls),
-        incremental_unique_count=len(treatment_urls - control_urls),
+        treatment_unique_count=len(proven_recent_urls),
+        incremental_unique_count=len(proven_incremental_urls),
         status="success",
     )
 
@@ -650,11 +715,10 @@ class PairedZhRouteShadowDiscovery(EffectiveRouteDiscovery):
 
 
 def install_paired_zh_route_shadow_discovery() -> None:
-    """Install only the metadata sidecar class used by v0.6 Shadow runtime."""
+    """Install only the metadata sidecar used by the v0.6 Shadow runtime."""
     from . import pipeline_v05 as _pipeline_v05
 
-    current = _pipeline_v05.NativeSourceDiscovery
-    if current is PairedZhRouteShadowDiscovery:
+    if _pipeline_v05.NativeSourceDiscovery is PairedZhRouteShadowDiscovery:
         return
     _pipeline_v05.NativeSourceDiscovery = PairedZhRouteShadowDiscovery
 
