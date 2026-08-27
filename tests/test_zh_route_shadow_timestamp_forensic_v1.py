@@ -22,6 +22,7 @@ def _base(**overrides):
 
 def test_url_path_date_is_extracted_without_claiming_publication_semantics() -> None:
     assert url_path_date("https://companies.caixin.com/2026-08-27/102478733.html") == "2026-08-27"
+    assert url_path_date("https://www.eeo.com.cn/2026/0827/1013692.shtml") == "2026-08-27"
     assert url_path_date("https://www.jiemian.com/article/15010846.html") == ""
 
 
@@ -37,6 +38,24 @@ def test_caixin_day0_false_stale_date_is_flagged_as_conflict() -> None:
     )
     assert [finding.finding for finding in findings] == ["url_path_date_conflict"]
     assert findings[0].url_path_date == "2026-08-27"
+
+
+def test_eeo_compact_path_date_is_available_but_unbound() -> None:
+    findings = audit_item_timestamp(
+        _base(
+            source_id="eeo",
+            surface_id="eeo_technology_plus",
+            url_canonical="http://eeo.com.cn/2026/0827/1013692.shtml",
+            title="动力电池回收监管组合拳落地",
+            published_at="",
+        )
+    )
+    assert [finding.finding for finding in findings] == ["url_path_date_available_but_unbound"]
+    assert findings[0].url_path_date == "2026-08-27"
+
+
+def test_invalid_compact_path_date_is_not_promoted_to_evidence() -> None:
+    assert url_path_date("https://www.eeo.com.cn/2026/0231/1013692.shtml") == ""
 
 
 def test_yicai_article_local_relative_age_can_be_observed_without_binding() -> None:
