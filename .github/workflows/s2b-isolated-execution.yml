@@ -22,6 +22,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -55,6 +57,16 @@ jobs:
         env:
           GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
         run: python scripts/s2b_materialize_manifest.py --output s2b-manifest.json
+
+      - name: Verify frozen acquisition semantics
+        if: ${{ steps.phase.outputs.mode == 'execute' }}
+        run: |
+          git fetch --no-tags --depth=1 origin a380c68920c1de26f1e703b721d7eb2195900002
+          git diff --exit-code a380c68920c1de26f1e703b721d7eb2195900002 HEAD -- \
+            src/longread_collector/extraction.py \
+            src/longread_collector/clients.py \
+            src/longread_collector/pipeline.py \
+            src/longread_collector/config.py
 
       - name: Download verified manifest artifact
         if: ${{ steps.phase.outputs.mode == 'execute' }}
