@@ -29,12 +29,39 @@ def test_relative_age_becomes_bounded_fresh_when_unbound():
     assert result.primary_evidence == "listing_relative_age_bounded"
 
 
+def test_card_local_yesterday_clock_becomes_exact_s1_evidence():
+    result = measure_item_timestamp(
+        _row(
+            title="监管重拳整治速成车 昨天 20:04",
+            treatment_observed_at_bj="2026-08-28 04:01:33",
+        )
+    )
+    assert result.measurement_state == "card_clock_exact"
+    assert result.freshness_state == "fresh"
+    assert result.interval_start.startswith("2026-08-27T20:04:00")
+
+
 def test_yicai_wrong_day_high_timestamp_fails_closed_as_conflict():
     result = measure_item_timestamp(
         _row(
             title="具身智能市场将破1万亿 3小时前",
             treatment_observed_at_bj="2026-08-27 22:48:21",
             published_at="2026-08-26T22:43:00+08:00",
+            publication_time_source="listing_relative_clock",
+            publication_time_confidence="high",
+        )
+    )
+    assert result.measurement_state == "conflict"
+    assert result.freshness_state == "conflict"
+    assert "trusted_evidence_conflict" in result.diagnostic_flags
+
+
+def test_yicai_wrong_bound_yesterday_clock_is_conflict():
+    result = measure_item_timestamp(
+        _row(
+            title="监管重拳整治速成车 昨天 20:04",
+            treatment_observed_at_bj="2026-08-28 04:01:33",
+            published_at="2026-08-27T22:51:00+08:00",
             publication_time_source="listing_relative_clock",
             publication_time_confidence="high",
         )
