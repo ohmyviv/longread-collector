@@ -6,8 +6,10 @@ import pytest
 
 from longread_collector.zh_route_shadow_s2b_sample_plan_v1 import (
     INSUFFICIENT,
+    OBVIOUS,
     PLAUSIBLE,
     S2B_BODY_ATTEMPT_CAP,
+    S2B_FROZEN_COHORT_TOTAL,
     S2B_PRIMARY_PLAUSIBLE_N,
     S2B_REPLACEMENT_ALLOWED,
     S2B_STRATUM_QUOTAS,
@@ -46,16 +48,29 @@ def _rows_for_frozen_denominators():
                 }
             )
             counter += 1
-    # Obvious S2-A rejects are intentionally never body targets.
-    rows.append(
-        {
-            "url_canonical": "https://example.test/out.html",
-            "source_id": "yicai",
-            "metadata_class": "obvious_out_of_scope",
-            "first_surface": "yicai_kechuang",
-        }
-    )
+
+    # Preserve the complete reviewed S2-A cohort even though obvious rows never
+    # consume body budget. Their exact 5/15 source denominators are part of the
+    # snapshot-drift guard.
+    for source_id, count, first_surface in (
+        ("jiemian-depth", 5, "jiemian_medicine"),
+        ("yicai", 15, "yicai_kechuang"),
+    ):
+        for _ in range(count):
+            rows.append(
+                {
+                    "url_canonical": f"https://example.test/{counter}.html",
+                    "source_id": source_id,
+                    "metadata_class": OBVIOUS,
+                    "first_surface": first_surface,
+                }
+            )
+            counter += 1
     return rows
+
+
+def test_fixture_matches_frozen_s2a_total():
+    assert len(_rows_for_frozen_denominators()) == S2B_FROZEN_COHORT_TOTAL == 129
 
 
 def test_sample_is_exactly_bounded_and_matches_frozen_quotas():
@@ -92,25 +107,29 @@ def test_selection_is_order_independent_under_fixed_seed():
     assert first == second
 
 
-def test_stratum_under_quota_fails_closed_without_substitution():
+def test_future_or_missing_row_fails_frozen_universe_check():
+    rows = _rows_for_frozen_denominators()[:-1]
+    with pytest.raises(ValueError, match="frozen cohort total mismatch"):
+        select_s2b_sample(rows)
+
+
+def test_eligible_stratum_drift_fails_closed_without_substitution():
     rows = _rows_for_frozen_denominators()
-    rows = [
-        row
-        for row in rows
-        if not (
+    for row in rows:
+        if (
             row["source_id"] == "yicai"
             and row["metadata_class"] == PLAUSIBLE
             and row["first_surface"] == "yicai_auto"
-            and row["url_canonical"].endswith(".html")
-        )
-    ]
-    with pytest.raises(ValueError, match="stratum under quota"):
+        ):
+            row["first_surface"] = "yicai_kechuang"
+            break
+    with pytest.raises(ValueError, match="stratum denominator mismatch"):
         select_s2b_sample(rows)
 
 
 def test_duplicate_canonical_url_fails_closed():
     rows = _rows_for_frozen_denominators()
-    rows.append(dict(rows[0]))
+    rows[-1]["url_canonical"] = rows[0]["url_canonical"]
     with pytest.raises(ValueError, match="duplicate canonical URL"):
         select_s2b_sample(rows)
 
@@ -118,4 +137,4 @@ def test_duplicate_canonical_url_fails_closed():
 def test_obvious_out_of_scope_never_enters_sample():
     sample = select_s2b_sample(_rows_for_frozen_denominators())
     assert all(item.metadata_class in {PLAUSIBLE, INSUFFICIENT} for item in sample)
-    assert all(item.url_canonical != "https://example.test/out.html" for item in sample)
+    assert all(item.metadata_class != OBVIOUS for item in sample)
