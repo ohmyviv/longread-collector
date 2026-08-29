@@ -1,0 +1,83 @@
+name: S2-B isolated body validation
+
+on:
+  push:
+    branches:
+      - phase3/s2b-execution-v1
+    paths:
+      - '.s2b-manifest-trigger'
+      - '.s2b-execute-trigger'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: s2b-isolated-body-validation
+  cancel-in-progress: false
+
+jobs:
+  s2b:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install .
+
+      - name: Prepare Google credentials
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON_B64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_B64 }}
+        run: |
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON_B64"
+          echo "$GOOGLE_SERVICE_ACCOUNT_JSON_B64" | base64 -d > /tmp/google-service-account.json
+          chmod 600 /tmp/google-service-account.json
+
+      - name: Materialize frozen manifest only
+        if: ${{ !hashFiles('.s2b-execute-trigger') }}
+        env:
+          GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
+        run: python scripts/s2b_materialize_manifest.py --output s2b-manifest.json
+
+      - name: Verify execution preconditions
+        if: ${{ hashFiles('.s2b-execute-trigger') != '' }}
+        run: |
+          test -f evidence/s2b-manifest-20260829.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path('evidence/s2b-manifest-20260829.json').read_text())
+          assert p['schema_version']=='zh-route-shadow-s2b-manifest-v1'
+          assert len(p['items'])==40
+          print(p['manifest_sha256'])
+          PY
+
+      - name: Execute bounded body acquisition
+        if: ${{ hashFiles('.s2b-execute-trigger') != '' }}
+        env:
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          GOOGLE_SHEET_ID: 1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4
+          GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
+          TIMEZONE: Asia/Shanghai
+          MAX_URLS_PER_RUN: '40'
+          MAX_CONCURRENCY: '2'
+          FIRECRAWL_FALLBACK_DAILY_LIMIT: '3'
+          MIN_BODY_CHARS: '1200'
+          EDITOR_MIN_BODY_CHARS: '2500'
+        run: |
+          python scripts/s2b_execute_body_audit.py \
+            --manifest evidence/s2b-manifest-20260829.json \
+            --output s2b-acquisition-results.json
+
+      - name: Archive S2-B evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: s2b-evidence-${{ github.run_id }}
+          path: |
+            s2b-manifest.json
+            s2b-acquisition-results.json
+          if-no-files-found: error
+          retention-days: 14
