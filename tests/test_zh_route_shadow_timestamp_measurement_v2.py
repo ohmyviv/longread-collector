@@ -105,6 +105,23 @@ def test_caixin_untrusted_persisted_date_does_not_override_url_day():
     assert "persisted_timestamp_not_trusted" in result.diagnostic_flags
 
 
+def test_caixin_persisted_date_only_vs_url_date_fails_closed():
+    result = measure_item_timestamp(
+        _row(
+            source_id="caixin",
+            surface_id="caixin_companies",
+            url_canonical="https://companies.caixin.com/2026-08-27/102478733.html",
+            treatment_observed_at_bj="2026-08-27 22:48:21",
+            published_at="2026-08-02",
+            publication_time_source="listing_absolute_date",
+            publication_time_confidence="date_only",
+        )
+    )
+    assert result.measurement_state == "conflict"
+    assert result.freshness_state == "conflict"
+    assert "url_path_date_conflict" in result.diagnostic_flags
+
+
 def test_url_date_near_seven_day_boundary_stays_unknown():
     result = measure_item_timestamp(
         _row(
