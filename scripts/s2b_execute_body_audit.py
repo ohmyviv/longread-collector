@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextvars
 import hashlib
 import json
+import os
+from collections import defaultdict
 from pathlib import Path
+
+import httpx
 
 from longread_collector.clients import FirecrawlClient, JinaReaderClient
 from longread_collector.config import Settings
@@ -14,10 +19,31 @@ from longread_collector.models import DiscoveredURL
 EXPECTED_SCHEMA = "zh-route-shadow-s2b-manifest-v1"
 EXPECTED_TOTAL = 40
 SEMANTIC_RUNTIME_BASELINE = "a380c68920c1de26f1e703b721d7eb2195900002"
+ACQUISITION_FILES = (
+    "src/longread_collector/extraction.py",
+    "src/longread_collector/clients.py",
+    "src/longread_collector/pipeline.py",
+    "src/longread_collector/config.py",
+)
+_REQUEST_ORDINAL: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "s2b_request_ordinal", default=None
+)
+_NETWORK_REQUESTS_BY_ORDINAL: dict[int, int] = defaultdict(int)
 
 
 def canonical_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def acquisition_fingerprint() -> str:
+    digest = hashlib.sha256()
+    for name in ACQUISITION_FILES:
+        path = Path(name)
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def validate_manifest(payload: dict[str, object]) -> list[dict[str, object]]:
@@ -37,8 +63,35 @@ def validate_manifest(payload: dict[str, object]) -> list[dict[str, object]]:
     return items
 
 
+def install_http_request_counter():
+    original_get = httpx.AsyncClient.get
+    original_post = httpx.AsyncClient.post
+
+    async def counted_get(self, *args, **kwargs):
+        ordinal = _REQUEST_ORDINAL.get()
+        if ordinal is not None:
+            _NETWORK_REQUESTS_BY_ORDINAL[ordinal] += 1
+        return await original_get(self, *args, **kwargs)
+
+    async def counted_post(self, *args, **kwargs):
+        ordinal = _REQUEST_ORDINAL.get()
+        if ordinal is not None:
+            _NETWORK_REQUESTS_BY_ORDINAL[ordinal] += 1
+        return await original_post(self, *args, **kwargs)
+
+    httpx.AsyncClient.get = counted_get
+    httpx.AsyncClient.post = counted_post
+    return original_get, original_post
+
+
+def restore_http_request_counter(original_get, original_post) -> None:
+    httpx.AsyncClient.get = original_get
+    httpx.AsyncClient.post = original_post
+
+
 async def run_one(item: dict[str, object], *, settings: Settings, jina: JinaReaderClient,
                   firecrawl: FirecrawlClient, budget: FallbackBudget, semaphore: asyncio.Semaphore) -> dict[str, object]:
+    ordinal = int(item["manifest_ordinal"])
     discovered = DiscoveredURL(
         url=str(item["url_canonical"]),
         title=str(item.get("title") or ""),
@@ -51,18 +104,15 @@ async def run_one(item: dict[str, object], *, settings: Settings, jina: JinaRead
             "s2b_first_surface": item.get("first_surface"),
         },
     )
-    async with semaphore:
-        article = await extract_article(discovered, jina, firecrawl, settings, budget)
+    token = _REQUEST_ORDINAL.set(ordinal)
+    try:
+        async with semaphore:
+            article = await extract_article(discovered, jina, firecrawl, settings, budget)
+    finally:
+        _REQUEST_ORDINAL.reset(token)
     attempts = list(article.extraction_attempts)
-    network_requests = sum(
-        1 for attempt in attempts
-        if not (
-            attempt.get("extractor") == "firecrawl"
-            and attempt.get("error_type") == "DailyFallbackBudgetExhausted"
-        )
-    )
     return {
-        "manifest_ordinal": item["manifest_ordinal"],
+        "manifest_ordinal": ordinal,
         "url_canonical": item["url_canonical"],
         "source_id": item["source_id"],
         "first_surface": item["first_surface"],
@@ -70,7 +120,7 @@ async def run_one(item: dict[str, object], *, settings: Settings, jina: JinaRead
         "sampling_role": item["sampling_role"],
         "deterministic_rank": item["deterministic_rank"],
         "manifest_title": item.get("title", ""),
-        "network_request_count": network_requests,
+        "network_request_count": _NETWORK_REQUESTS_BY_ORDINAL[ordinal],
         "extraction_attempts": attempts,
         "extractor_used": article.extractor_used,
         "extraction_status": article.extraction_status,
@@ -105,8 +155,22 @@ async def execute(manifest: dict[str, object]) -> dict[str, object]:
     # but never reads/writes the natural Collector's daily ledger.
     budget = FallbackBudget(remaining=settings.firecrawl_fallback_daily_limit)
     semaphore = asyncio.Semaphore(settings.max_concurrency)
-    tasks = [run_one(item, settings=settings, jina=jina, firecrawl=firecrawl, budget=budget, semaphore=semaphore) for item in items]
-    results = await asyncio.gather(*tasks)
+    original_get, original_post = install_http_request_counter()
+    try:
+        tasks = [
+            run_one(
+                item,
+                settings=settings,
+                jina=jina,
+                firecrawl=firecrawl,
+                budget=budget,
+                semaphore=semaphore,
+            )
+            for item in items
+        ]
+        results = await asyncio.gather(*tasks)
+    finally:
+        restore_http_request_counter(original_get, original_post)
     results = sorted(results, key=lambda row: int(row["manifest_ordinal"]))
     total_network = sum(int(row["network_request_count"]) for row in results)
     firecrawl_attempts = sum(
@@ -116,6 +180,9 @@ async def execute(manifest: dict[str, object]) -> dict[str, object]:
     return {
         "schema_version": "zh-route-shadow-s2b-acquisition-results-v1",
         "semantic_runtime_baseline": SEMANTIC_RUNTIME_BASELINE,
+        "execution_commit": os.environ.get("GITHUB_SHA", ""),
+        "acquisition_files": list(ACQUISITION_FILES),
+        "acquisition_fingerprint_sha256": acquisition_fingerprint(),
         "manifest_sha256": manifest["manifest_sha256"],
         "manifest_count": len(items),
         "control_acquisition_contract": "legacy extract_article: jina -> budgeted firecrawl fallback",
