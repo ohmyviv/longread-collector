@@ -7,6 +7,7 @@ on:
     paths:
       - '.s2b-manifest-trigger'
       - '.s2b-execute-trigger'
+      - '.s2b-validate-trigger'
 
 permissions:
   contents: read
@@ -34,7 +35,9 @@ jobs:
         id: phase
         shell: bash
         run: |
-          if [[ -f .s2b-execute-trigger ]]; then
+          if [[ -f .s2b-validate-trigger ]]; then
+            echo 'mode=validate' >> "$GITHUB_OUTPUT"
+          elif [[ -f .s2b-execute-trigger ]]; then
             echo 'mode=execute' >> "$GITHUB_OUTPUT"
           elif [[ -f .s2b-manifest-trigger ]]; then
             echo 'mode=manifest' >> "$GITHUB_OUTPUT"
@@ -44,7 +47,7 @@ jobs:
           fi
 
       - name: Prepare Google credentials
-        if: ${{ steps.phase.outputs.mode == 'manifest' }}
+        if: ${{ steps.phase.outputs.mode == 'manifest' || steps.phase.outputs.mode == 'validate' }}
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON_B64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_B64 }}
         run: |
@@ -111,6 +114,12 @@ jobs:
             --manifest verified-manifest/s2b-manifest.json \
             --output s2b-acquisition-results.json
 
+      - name: Validate reviewed result ledger
+        if: ${{ steps.phase.outputs.mode == 'validate' }}
+        env:
+          GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
+        run: python scripts/s2b_validate_sheet_results.py --output s2b-validation-summary.json
+
       - name: Archive S2-B evidence
         uses: actions/upload-artifact@v4
         with:
@@ -119,5 +128,6 @@ jobs:
             s2b-manifest.json
             verified-manifest/s2b-manifest.json
             s2b-acquisition-results.json
+            s2b-validation-summary.json
           if-no-files-found: error
           retention-days: 14
