@@ -1,0 +1,59 @@
+name: Jina no-auth canary
+run-name: Jina no-auth canary · ${{ github.sha }}
+
+on:
+  push:
+    branches:
+      - experiment/jina-noauth-canary
+    paths:
+      - '.jina-noauth-canary/run'
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run fixed unauthenticated Reader canaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          urls=(
+            'https://r.jina.ai/https://www.iana.org/help/example-domains'
+            'https://r.jina.ai/https://www.python.org/about/'
+            'https://r.jina.ai/https://www.gnu.org/philosophy/free-sw.en.html'
+          )
+          printf '%s\n' '{"schema_version":"jina-noauth-canary-v1","auth_header_sent":false,"items":[' > jina-noauth-canary.json
+          first=1
+          success=0
+          ordinal=0
+          for url in "${urls[@]}"; do
+            ordinal=$((ordinal+1))
+            body="body-${ordinal}.txt"
+            headers="headers-${ordinal}.txt"
+            status=$(curl --silent --show-error --location --max-time 60 \
+              --header 'Accept: text/plain' \
+              --header 'User-Agent: longread-collector-jina-noauth-canary/1.0' \
+              --header 'X-Return-Format: markdown' \
+              --dump-header "$headers" --output "$body" --write-out '%{http_code}' "$url" || true)
+            chars=$(wc -c < "$body" 2>/dev/null || echo 0)
+            if [[ "$status" == "200" && "$chars" -ge 600 ]]; then ok=true; success=$((success+1)); else ok=false; fi
+            [[ $first -eq 1 ]] || printf ',' >> jina-noauth-canary.json
+            first=0
+            jq -n --argjson ordinal "$ordinal" --arg url "$url" --arg status "$status" --argjson chars "$chars" --argjson success "$ok" \
+              '{ordinal:$ordinal,url:$url,http_status:$status,body_chars:$chars,success:$success}' >> jina-noauth-canary.json
+          done
+          printf '],"success_count":%s,"provider_status":"%s"}\n' "$success" "$([[ $success -eq 3 ]] && echo FREE_TIER_READY || echo FREE_TIER_NOT_READY)" >> jina-noauth-canary.json
+          jq . jina-noauth-canary.json
+
+      - name: Archive canary evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: jina-noauth-canary-${{ github.run_id }}
+          path: jina-noauth-canary.json
+          if-no-files-found: error
+          retention-days: 30
