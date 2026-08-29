@@ -1,6 +1,0 @@
-authorized_at=2026-08-29
-manifest_sha256=7946ce964f82abd14a95e925769dbcde484dd581d0713d4996f149cb216a247b
-track=VALUE
-jina_auth_mode=unauthenticated_free_tier
-jina_min_interval_seconds=3.1
-paid_firecrawl_cap=20
