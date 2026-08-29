@@ -1,0 +1,71 @@
+name: S2-B v2 Track V body observability
+run-name: S2-B v2 Track V · ${{ github.sha }}
+
+on:
+  push:
+    branches:
+      - experiment/s2b-v2-track-v
+    paths:
+      - '.s2b-v2-track-v/run'
+
+permissions:
+  contents: read
+
+jobs:
+  track-v:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install
+        run: pip install .
+
+      - name: Prepare Google credentials
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON_B64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_B64 }}
+        run: |
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON_B64"
+          echo "$GOOGLE_SERVICE_ACCOUNT_JSON_B64" | base64 -d > /tmp/google-service-account.json
+          chmod 600 /tmp/google-service-account.json
+
+      - name: Materialize exact frozen manifest
+        env:
+          GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
+        run: |
+          python scripts/s2b_materialize_manifest.py --output s2b-v2-manifest.json
+          jq -e '.manifest_sha256 == "7946ce964f82abd14a95e925769dbcde484dd581d0713d4996f149cb216a247b" and (.items | length) == 40' s2b-v2-manifest.json >/dev/null
+
+      - name: Run provider gate and Track V if READY
+        env:
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          GOOGLE_SHEET_ID: 1dE_0alXOO254hrycAMNISmjpL8brLUji9ZNMK0NBDnQ
+          GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
+          TIMEZONE: Asia/Shanghai
+          MAX_CONCURRENCY: '2'
+          MIN_BODY_CHARS: '1200'
+          EDITOR_MIN_BODY_CHARS: '2500'
+          FIRECRAWL_FALLBACK_DAILY_LIMIT: '3'
+        run: |
+          python scripts/s2b_v2_track_v.py \
+            --manifest s2b-v2-manifest.json \
+            --output s2b-v2-track-v-results.json
+          jq -e '.manifest_sha256 == "7946ce964f82abd14a95e925769dbcde484dd581d0713d4996f149cb216a247b"' s2b-v2-track-v-results.json >/dev/null
+          jq '{status, panel_requests_started, network_request_count, firecrawl_logical_calls, body_evaluable_count, budget_censored_count, acquisition_failed_count, canary}' s2b-v2-track-v-results.json
+
+      - name: Archive immutable Track V evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s2b-v2-track-v-${{ github.run_id }}
+          path: |
+            s2b-v2-manifest.json
+            s2b-v2-track-v-results.json
+          if-no-files-found: error
+          retention-days: 30
