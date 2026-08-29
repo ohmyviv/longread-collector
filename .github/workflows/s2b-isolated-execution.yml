@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: s2b-isolated-body-validation
@@ -41,6 +42,7 @@ jobs:
           fi
 
       - name: Prepare Google credentials
+        if: ${{ steps.phase.outputs.mode == 'manifest' }}
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON_B64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_B64 }}
         run: |
@@ -54,16 +56,28 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
         run: python scripts/s2b_materialize_manifest.py --output s2b-manifest.json
 
+      - name: Download verified manifest artifact
+        if: ${{ steps.phase.outputs.mode == 'execute' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: s2b-evidence-33241941984
+          path: verified-manifest
+          github-token: ${{ github.token }}
+          repository: ohmyviv/longread-collector
+          run-id: 33241941984
+
       - name: Verify execution preconditions
         if: ${{ steps.phase.outputs.mode == 'execute' }}
         run: |
-          test -f evidence/s2b-manifest-20260829.json
+          test -f verified-manifest/s2b-manifest.json
           python - <<'PY'
           import json
           from pathlib import Path
-          p=json.loads(Path('evidence/s2b-manifest-20260829.json').read_text())
+          p=json.loads(Path('verified-manifest/s2b-manifest.json').read_text())
           assert p['schema_version']=='zh-route-shadow-s2b-manifest-v1'
+          assert p['source_row_count']==129
           assert len(p['items'])==40
+          assert p['manifest_sha256']=='7946ce964f82abd14a95e925769dbcde484dd581d0713d4996f149cb216a247b'
           print(p['manifest_sha256'])
           PY
 
@@ -82,7 +96,7 @@ jobs:
           EDITOR_MIN_BODY_CHARS: '2500'
         run: |
           python scripts/s2b_execute_body_audit.py \
-            --manifest evidence/s2b-manifest-20260829.json \
+            --manifest verified-manifest/s2b-manifest.json \
             --output s2b-acquisition-results.json
 
       - name: Archive S2-B evidence
@@ -91,6 +105,7 @@ jobs:
           name: s2b-evidence-${{ github.run_id }}
           path: |
             s2b-manifest.json
+            verified-manifest/s2b-manifest.json
             s2b-acquisition-results.json
           if-no-files-found: error
           retention-days: 14
