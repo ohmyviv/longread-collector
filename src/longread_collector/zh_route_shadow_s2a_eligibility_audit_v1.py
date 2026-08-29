@@ -26,13 +26,15 @@ S2A_ALLOWED_CLASSES = frozenset(
         "insufficient_evidence",
     }
 )
+S2A_REASON_BY_CLASS = {
+    "plausible_standard_longread": frozenset({"substantive_editorial_depth_signal"}),
+    "obvious_out_of_scope": frozenset(
+        {"promotional_or_corporate_pr_identity", "quick_digest_comment_or_roundup_format"}
+    ),
+    "insufficient_evidence": frozenset({"metadata_insufficient_for_longread_depth"}),
+}
 S2A_ALLOWED_REASONS = frozenset(
-    {
-        "substantive_editorial_depth_signal",
-        "promotional_or_corporate_pr_identity",
-        "quick_digest_comment_or_roundup_format",
-        "metadata_insufficient_for_longread_depth",
-    }
+    reason for reasons in S2A_REASON_BY_CLASS.values() for reason in reasons
 )
 
 
@@ -62,7 +64,7 @@ def _bool(value: Any) -> bool | None:
     text = _text(value).lower()
     if text in {"true", "1", "yes", "y"}:
         return True
-    if text in {"false", "0", "no", "n", ""}:
+    if text in {"false", "0", "no", "n"}:
         return False
     return None
 
@@ -148,7 +150,8 @@ def validate_reviewed_labels(
         label = labels[url]
         metadata_class = _text(label.get("metadata_class"))
         reason = _text(label.get("class_reason"))
-        if metadata_class not in S2A_ALLOWED_CLASSES or reason not in S2A_ALLOWED_REASONS:
+        allowed_reasons = S2A_REASON_BY_CLASS.get(metadata_class, frozenset())
+        if metadata_class not in S2A_ALLOWED_CLASSES or reason not in allowed_reasons:
             invalid.append(
                 {
                     "url_canonical": url,
@@ -182,6 +185,7 @@ __all__ = [
     "S2A_ALLOWED_CLASSES",
     "S2A_ALLOWED_REASONS",
     "S2A_ELIGIBILITY_VERSION",
+    "S2A_REASON_BY_CLASS",
     "S2A_SOURCES",
     "S2ACohortItem",
     "build_s2a_cohort",
