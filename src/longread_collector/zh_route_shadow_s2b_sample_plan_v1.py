@@ -18,9 +18,39 @@ S2B_BODY_ATTEMPT_CAP = 40
 S2B_PRIMARY_PLAUSIBLE_N = 30
 S2B_UNCERTAINTY_EXPLORE_N = 10
 S2B_REPLACEMENT_ALLOWED = False
+S2B_FROZEN_COHORT_TOTAL = 129
 
 PLAUSIBLE = "plausible_standard_longread"
 INSUFFICIENT = "insufficient_evidence"
+OBVIOUS = "obvious_out_of_scope"
+
+S2B_FROZEN_SOURCE_CLASS_DENOMINATORS: dict[tuple[str, str], int] = {
+    ("jiemian-depth", PLAUSIBLE): 28,
+    ("jiemian-depth", INSUFFICIENT): 13,
+    ("jiemian-depth", OBVIOUS): 5,
+    ("yicai", PLAUSIBLE): 43,
+    ("yicai", INSUFFICIENT): 25,
+    ("yicai", OBVIOUS): 15,
+}
+
+# Exact S2-A denominators for strata that are eligible to consume S2-B body
+# budget. These are frozen so later S1 accumulation cannot silently perturb the
+# sample even though the seed remains constant.
+S2B_FROZEN_STRATUM_DENOMINATORS: dict[tuple[str, str, str], int] = {
+    ("jiemian-depth", PLAUSIBLE, "jiemian_consumer"): 11,
+    ("jiemian-depth", PLAUSIBLE, "jiemian_health_face"): 1,
+    ("jiemian-depth", PLAUSIBLE, "jiemian_medicine"): 16,
+    ("jiemian-depth", INSUFFICIENT, "jiemian_consumer"): 9,
+    ("jiemian-depth", INSUFFICIENT, "jiemian_medicine"): 4,
+    ("yicai", PLAUSIBLE, "yicai_auto"): 2,
+    ("yicai", PLAUSIBLE, "yicai_finance"): 14,
+    ("yicai", PLAUSIBLE, "yicai_kechuang"): 22,
+    ("yicai", PLAUSIBLE, "yicai_news_breadth"): 5,
+    ("yicai", INSUFFICIENT, "yicai_auto"): 1,
+    ("yicai", INSUFFICIENT, "yicai_finance"): 15,
+    ("yicai", INSUFFICIENT, "yicai_kechuang"): 5,
+    ("yicai", INSUFFICIENT, "yicai_news_breadth"): 4,
+}
 
 # Quotas are source-specific because S2-B estimates source-level body survival,
 # not a pooled portfolio average. `first_surface` is the frozen attribution key
@@ -68,12 +98,38 @@ def _rank(url: str, *, source_id: str, metadata_class: str, first_surface: str) 
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _assert_frozen_counts(
+    *,
+    total: int,
+    source_class_counts: dict[tuple[str, str], int],
+    stratum_counts: dict[tuple[str, str, str], int],
+) -> None:
+    if total != S2B_FROZEN_COHORT_TOTAL:
+        raise ValueError(
+            "S2-B frozen cohort total mismatch: "
+            f"expected {S2B_FROZEN_COHORT_TOTAL}, found {total}"
+        )
+    if source_class_counts != S2B_FROZEN_SOURCE_CLASS_DENOMINATORS:
+        raise ValueError(
+            "S2-B frozen source/class denominator mismatch: "
+            f"expected {S2B_FROZEN_SOURCE_CLASS_DENOMINATORS}, "
+            f"found {source_class_counts}"
+        )
+    if stratum_counts != S2B_FROZEN_STRATUM_DENOMINATORS:
+        raise ValueError(
+            "S2-B frozen stratum denominator mismatch: "
+            f"expected {S2B_FROZEN_STRATUM_DENOMINATORS}, found {stratum_counts}"
+        )
+
+
 def select_s2b_sample(rows: Iterable[dict[str, Any]]) -> tuple[S2BSampleItem, ...]:
     """Select the frozen 40-item S2-B sample from the reviewed S2-A cohort.
 
     Fail-closed properties:
+    - the supplied rows must be the exact frozen 129-item S2-A cohort;
+    - source/class and eligible source/class/surface denominators must match;
     - only the exact source/class/surface strata with frozen quotas are admitted;
-    - canonical URLs must be unique in the supplied S2-A cohort;
+    - canonical URLs must be unique;
     - every quota must be satisfiable; there is no cross-stratum substitution;
     - selection is order-independent and deterministic under the fixed seed;
     - no replacement policy is encoded by the contract constant, not by peeking
@@ -82,6 +138,8 @@ def select_s2b_sample(rows: Iterable[dict[str, Any]]) -> tuple[S2BSampleItem, ..
 
     grouped: dict[tuple[str, str, str], list[tuple[str, str]]] = defaultdict(list)
     seen_urls: set[str] = set()
+    source_class_counts: dict[tuple[str, str], int] = defaultdict(int)
+    stratum_counts: dict[tuple[str, str, str], int] = defaultdict(int)
 
     for row in rows:
         url = _text(row.get("url_canonical"))
@@ -90,27 +148,51 @@ def select_s2b_sample(rows: Iterable[dict[str, Any]]) -> tuple[S2BSampleItem, ..
         first_surface = _text(row.get("first_surface"))
 
         if not url:
-            continue
+            raise ValueError("missing canonical URL in frozen S2-A cohort")
         if url in seen_urls:
             raise ValueError(f"duplicate canonical URL in S2-A cohort: {url}")
         seen_urls.add(url)
 
-        key = (source_id, metadata_class, first_surface)
-        if key not in S2B_STRATUM_QUOTAS:
-            # S2-A obvious-out-of-scope rows and any future non-authorized strata
-            # do not silently become body targets.
+        source_class_key = (source_id, metadata_class)
+        if source_class_key not in S2B_FROZEN_SOURCE_CLASS_DENOMINATORS:
+            raise ValueError(
+                "unexpected source/class in frozen S2-A cohort: "
+                f"{source_id}/{metadata_class}"
+            )
+        source_class_counts[source_class_key] += 1
+
+        if metadata_class == OBVIOUS:
             continue
-        grouped[key].append((url, _rank(
-            url,
-            source_id=source_id,
-            metadata_class=metadata_class,
-            first_surface=first_surface,
-        )))
+
+        key = (source_id, metadata_class, first_surface)
+        if key not in S2B_FROZEN_STRATUM_DENOMINATORS:
+            raise ValueError(
+                "unexpected S2-B-eligible stratum in frozen S2-A cohort: "
+                f"{source_id}/{metadata_class}/{first_surface}"
+            )
+        stratum_counts[key] += 1
+        grouped[key].append(
+            (
+                url,
+                _rank(
+                    url,
+                    source_id=source_id,
+                    metadata_class=metadata_class,
+                    first_surface=first_surface,
+                ),
+            )
+        )
+
+    _assert_frozen_counts(
+        total=len(seen_urls),
+        source_class_counts=dict(source_class_counts),
+        stratum_counts=dict(stratum_counts),
+    )
 
     selected: list[S2BSampleItem] = []
     for key, quota in sorted(S2B_STRATUM_QUOTAS.items()):
         source_id, metadata_class, first_surface = key
-        available = sorted(grouped.get(key, []), key=lambda value: (value[1], value[0]))
+        available = sorted(grouped[key], key=lambda value: (value[1], value[0]))
         if len(available) < quota:
             raise ValueError(
                 "S2-B stratum under quota: "
@@ -180,8 +262,12 @@ def sample_summary(sample: Iterable[S2BSampleItem]) -> dict[str, Any]:
 
 __all__ = [
     "INSUFFICIENT",
+    "OBVIOUS",
     "PLAUSIBLE",
     "S2B_BODY_ATTEMPT_CAP",
+    "S2B_FROZEN_COHORT_TOTAL",
+    "S2B_FROZEN_SOURCE_CLASS_DENOMINATORS",
+    "S2B_FROZEN_STRATUM_DENOMINATORS",
     "S2B_PRIMARY_PLAUSIBLE_N",
     "S2B_REPLACEMENT_ALLOWED",
     "S2B_SAMPLE_PLAN_VERSION",
