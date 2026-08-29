@@ -27,6 +27,19 @@ jobs:
           cache: pip
       - run: pip install .
 
+      - name: Resolve execution phase
+        id: phase
+        shell: bash
+        run: |
+          if [[ -f .s2b-execute-trigger ]]; then
+            echo 'mode=execute' >> "$GITHUB_OUTPUT"
+          elif [[ -f .s2b-manifest-trigger ]]; then
+            echo 'mode=manifest' >> "$GITHUB_OUTPUT"
+          else
+            echo 'No explicit S2-B trigger file found' >&2
+            exit 2
+          fi
+
       - name: Prepare Google credentials
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON_B64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_B64 }}
@@ -36,13 +49,13 @@ jobs:
           chmod 600 /tmp/google-service-account.json
 
       - name: Materialize frozen manifest only
-        if: ${{ !hashFiles('.s2b-execute-trigger') }}
+        if: ${{ steps.phase.outputs.mode == 'manifest' }}
         env:
           GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
         run: python scripts/s2b_materialize_manifest.py --output s2b-manifest.json
 
       - name: Verify execution preconditions
-        if: ${{ hashFiles('.s2b-execute-trigger') != '' }}
+        if: ${{ steps.phase.outputs.mode == 'execute' }}
         run: |
           test -f evidence/s2b-manifest-20260829.json
           python - <<'PY'
@@ -55,7 +68,7 @@ jobs:
           PY
 
       - name: Execute bounded body acquisition
-        if: ${{ hashFiles('.s2b-execute-trigger') != '' }}
+        if: ${{ steps.phase.outputs.mode == 'execute' }}
         env:
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
           JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
