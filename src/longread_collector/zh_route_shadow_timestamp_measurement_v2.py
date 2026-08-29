@@ -72,12 +72,17 @@ def _parse_datetime(value: Any, *, tz: ZoneInfo) -> datetime | None:
 
 
 def _is_date_only(text: str, confidence: str, source: str) -> bool:
+    """Return true only for an explicitly date-only value.
+
+    `publication_time_source` names such as `rss_pubdate` may contain the word
+    `date` while still carrying an exact timestamp, so source-name heuristics
+    must not collapse exact evidence to a calendar day.
+    """
+
     value = _text(text)
     if not value:
         return False
     if _text(confidence).lower() == "date_only":
-        return True
-    if "date" in _text(source).lower() and "clock" not in _text(source).lower():
         return True
     return bool(re.fullmatch(r"20\d{2}-\d{1,2}-\d{1,2}", value))
 
@@ -92,6 +97,23 @@ def _day_interval(date_text: str, *, tz: ZoneInfo, kind: str) -> TimeInterval | 
         end=datetime.combine(parsed, time.max, tzinfo=tz),
         evidence_kind=kind,
         evidence_value=date_text,
+    )
+
+
+def _clip_existing_interval(interval: TimeInterval, observed: datetime) -> TimeInterval:
+    """An item observed on a listing already existed by observation time.
+
+    Calendar-day evidence may otherwise extend to 23:59 on the observation day
+    and look spuriously `boundary_unknown` because part of the abstract day lies
+    in the future. Clipping the upper bound to observation time uses only the
+    fact of observed existence; it does not invent an exact publication time.
+    """
+
+    return TimeInterval(
+        start=interval.start,
+        end=min(interval.end, observed),
+        evidence_kind=interval.evidence_kind,
+        evidence_value=interval.evidence_value,
     )
 
 
@@ -245,6 +267,7 @@ def measure_item_timestamp(
                 primary_evidence="measurement_vs_url_path_date",
                 diagnostic_flags=tuple(sorted(set(flags + ["url_path_date_conflict"]))),
             )
+        interval = _clip_existing_interval(interval, observed)
         if relative is not None:
             state = "bounded_relative"
         elif card_clock is not None:
@@ -266,6 +289,7 @@ def measure_item_timestamp(
         )
 
     if path is not None:
+        path = _clip_existing_interval(path, observed)
         return TimestampMeasurement(
             source_id,
             surface_id,
