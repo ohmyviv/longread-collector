@@ -1,0 +1,49 @@
+name: Yicai acquisition forensic v1 once
+run-name: Yicai acquisition forensic v1 · ${{ github.sha }}
+
+on:
+  push:
+    branches:
+      - phase3/yicai-acquisition-forensic-v1
+    paths:
+      - '.yicai-acquisition-forensic-v1/run'
+
+permissions:
+  contents: read
+
+jobs:
+  forensic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install
+        run: pip install -e .
+      - name: Prepare Google credentials
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON_B64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_B64 }}
+        run: |
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON_B64"
+          echo "$GOOGLE_SERVICE_ACCOUNT_JSON_B64" | base64 -d > /tmp/google-service-account.json
+          chmod 600 /tmp/google-service-account.json
+      - name: Run frozen Yicai forensic
+        env:
+          GOOGLE_SERVICE_ACCOUNT_FILE: /tmp/google-service-account.json
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+        run: |
+          test -n "$FIRECRAWL_API_KEY"
+          python scripts/yicai_acquisition_forensic_v1.py --output yicai-acquisition-forensic-v1.json
+          jq -e '.status == "COMPLETED" and .manifest_count == 4 and .actual_http_requests <= 20 and .production_mutations == 0 and .sheet_writes == 0 and .article_cache_writes == 0 and .editor_writes == 0 and .jina_authorization_header_sent == false' yicai-acquisition-forensic-v1.json >/dev/null
+          jq '{version,status,manifest_sha256,actual_http_requests,requests_by_scope,signals,manifest}' yicai-acquisition-forensic-v1.json
+      - name: Archive immutable forensic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yicai-acquisition-forensic-v1-${{ github.run_id }}
+          path: yicai-acquisition-forensic-v1.json
+          if-no-files-found: error
+          retention-days: 30
