@@ -10,7 +10,12 @@ import gspread
 
 from longread_collector.zh_route_shadow_s3_fixed32_v12 import (
     FROZEN_RUN_IDS,
+    OUTCOME_UNUSABLE,
+    OUTCOME_USABLE,
     replay_s3_cohort,
+)
+from longread_collector.zh_route_shadow_s3_utility_bound_v1 import (
+    conservative_fixed32_utility_bounds,
 )
 
 LIVE_SHEET_ID = "1Ohi2amTCPnIZZont7rwOLO487DFk64-pemLT8O76xq4"
@@ -65,6 +70,18 @@ S3B_REVIEW_OVERLAY = [
     },
 ]
 
+# These four Control identities were reviewed from already-persisted Production
+# article_cache bodies under the same frozen S2-B Standard Longread rubric.
+# External displaced Control identities are intentionally omitted: the lower
+# bound treats every omitted/unknown Control as a Standard Longread, which is
+# maximally unfavorable to Treatment.
+S3_CONTROL_REVIEW_OVERLAY = {
+    "https://jiemian.com/article/14887907.html": OUTCOME_USABLE,
+    "https://jiemian.com/article/14917744.html": OUTCOME_USABLE,
+    "https://jiemian.com/article/14954641.html": OUTCOME_UNUSABLE,
+    "https://jiemian.com/article/14955243.html": OUTCOME_UNUSABLE,
+}
+
 
 def _records(ws) -> list[dict[str, Any]]:
     values = ws.get_all_values()
@@ -111,15 +128,22 @@ def main() -> None:
         cohort_rows=cohort_rows,
         reviewed_rows=reviewed_rows,
     )
+    result["utility_bound"] = conservative_fixed32_utility_bounds(
+        result,
+        control_outcomes=S3_CONTROL_REVIEW_OVERLAY,
+    )
+    result["s3_decision"] = result["utility_bound"]["decision"]
     result["input_counts"] = {
         "snapshot_rows": len(snapshot_rows),
         "route_rows": len(route_rows),
         "cohort_rows": len(cohort_rows),
         "reviewed_rows_base": len(reviewed_rows) - len(S3B_REVIEW_OVERLAY),
         "reviewed_rows_s3b_overlay": len(S3B_REVIEW_OVERLAY),
+        "control_review_overlay": len(S3_CONTROL_REVIEW_OVERLAY),
     }
     result["s3b_provenance"] = dict(S3B_PROVENANCE)
     result["s3b_review_overlay"] = list(S3B_REVIEW_OVERLAY)
+    result["control_review_overlay"] = dict(S3_CONTROL_REVIEW_OVERLAY)
     result["read_only"] = True
     result["network_body_requests"] = 0
     result["sheet_writes"] = 0
@@ -135,6 +159,9 @@ def main() -> None:
                 "version": result.get("version"),
                 "status": result.get("status"),
                 "utility_status": result.get("utility_status"),
+                "s3_decision": result.get("s3_decision"),
+                "aggregate_delta_lower_bound": result.get("utility_bound", {}).get("aggregate_delta_lower_bound"),
+                "aggregate_delta_upper_bound": result.get("utility_bound", {}).get("aggregate_delta_upper_bound"),
                 "input_counts": result.get("input_counts"),
                 "control_passes": [
                     bool(value.get("pass")) for value in result.get("control_replays", [])
