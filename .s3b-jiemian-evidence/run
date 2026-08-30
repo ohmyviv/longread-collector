@@ -1,2 +1,5 @@
 authorized_s3b_execution=2026-08-30
 manifest_sha256=ff4fe7d54b1c38b3105329ec5653bed14799e7ae493bd36dc4d93fd88bfbc865
+attempt=2_after_zero_network_init_fix
+prior_attempt_run_id=33302365508
+prior_attempt_network_requests=0
