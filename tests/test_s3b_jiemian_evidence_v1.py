@@ -1,8 +1,7 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
-
-import pytest
 
 from longread_collector import zh_route_shadow_s3b_evidence_v1 as s3b
 
@@ -35,8 +34,7 @@ def test_manifest_is_exact_and_hashed() -> None:
     assert s3b.JINA_MIN_INTERVAL_SECONDS >= 3.1
 
 
-@pytest.mark.asyncio
-async def test_provider_not_ready_fails_before_panel(monkeypatch) -> None:
+def test_provider_not_ready_fails_before_panel(monkeypatch) -> None:
     async def fake_canary(_jina):
         return {"status": "PROVIDER_NOT_READY", "rows": [], "success_count": 0, "provider_failure_count": 3}
 
@@ -45,7 +43,7 @@ async def test_provider_not_ready_fails_before_panel(monkeypatch) -> None:
 
     monkeypatch.setattr(s3b, "run_canaries", fake_canary)
     monkeypatch.setattr(s3b, "observe_item", forbidden_observe)
-    result = await s3b.run_s3b(_settings())
+    result = asyncio.run(s3b.run_s3b(_settings()))
     assert result["status"] == "PROVIDER_NOT_READY"
     assert result["panel_requests_started"] is False
     assert result["results"] == []
@@ -54,8 +52,7 @@ async def test_provider_not_ready_fails_before_panel(monkeypatch) -> None:
     assert result["editor_writes"] == 0
 
 
-@pytest.mark.asyncio
-async def test_global_firecrawl_cap_and_no_replacement(monkeypatch) -> None:
+def test_global_firecrawl_cap_and_no_replacement(monkeypatch) -> None:
     async def fake_canary(_jina):
         return {"status": "READY", "rows": [], "success_count": 3, "provider_failure_count": 0}
 
@@ -94,7 +91,7 @@ async def test_global_firecrawl_cap_and_no_replacement(monkeypatch) -> None:
 
     monkeypatch.setattr(s3b, "run_canaries", fake_canary)
     monkeypatch.setattr(s3b, "observe_item", fake_observe)
-    result = await s3b.run_s3b(_settings())
+    result = asyncio.run(s3b.run_s3b(_settings()))
 
     assert result["status"] == "COMPLETED"
     assert [row["url_canonical"] for row in result["results"]] == EXPECTED_URLS
