@@ -1,0 +1,11 @@
+authorized_s3b_execution=2026-08-30
+manifest_sha256=ff4fe7d54b1c38b3105329ec5653bed14799e7ae493bd36dc4d93fd88bfbc865
+attempt=3_conservative_continuation
+zero_network_init_failure_run_id=33302365508
+partial_network_run_id=33302533697
+re_request_forbidden_ordinal=1
+continuation_ordinals=2,3,4
+prior_network_requests_upper_bound=16
+continuation_network_safety_cap=24
+prior_firecrawl_logical_upper_bound=1
+continuation_firecrawl_logical_cap=1
