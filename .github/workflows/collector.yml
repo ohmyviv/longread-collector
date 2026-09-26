@@ -14,17 +14,6 @@ on:
           - pre_report
           - zh_midday
           - zh_evening
-  schedule:
-    # Beijing time. Deadline-sensitive runs are advanced to absorb observed
-    # GitHub Actions schedule latency before the 07:35 editorial report.
-    - cron: '30 22 * * *'
-      timezone: 'Asia/Shanghai'
-    - cron: '57 3 * * *'
-      timezone: 'Asia/Shanghai'
-    - cron: '50 11 * * *'
-      timezone: 'Asia/Shanghai'
-    - cron: '50 17 * * *'
-      timezone: 'Asia/Shanghai'
 
 permissions:
   contents: read
